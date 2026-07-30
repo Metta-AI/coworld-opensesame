@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Open Sesame — Replay</title>
+  <style>
+    :root { color-scheme:dark; --acid:#d7ff45; --red:#ff4d5e; --line:#34372f; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:#0a0b0a; color:#eee9d8; font:14px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace; }
+    header { position:sticky; top:0; z-index:2; display:flex; justify-content:space-between; align-items:center; gap:20px; padding:20px 5vw; background:#0a0b0aee; border-bottom:1px solid var(--line); backdrop-filter:blur(8px); }
+    h1 { margin:0; font:800 30px system-ui,sans-serif; letter-spacing:-.05em; text-transform:uppercase; } h1 span { color:var(--acid); }
+    button { border:1px solid var(--acid); color:var(--acid); background:transparent; padding:8px 12px; font:inherit; cursor:pointer; }
+    main { max-width:1050px; margin:auto; padding:36px 5vw 90px; }
+    .event { display:grid; grid-template-columns:110px 1fr; gap:20px; padding:18px 0; border-top:1px solid var(--line); opacity:.24; }
+    .event.active { opacity:1; }
+    .type { color:var(--acid); text-transform:uppercase; }
+    .breach { color:var(--red); }
+    pre { white-space:pre-wrap; overflow-wrap:anywhere; margin:8px 0 0; color:#aaa79d; }
+    .scores { font:700 24px system-ui,sans-serif; margin-bottom:30px; }
+  </style>
+</head>
+<body>
+  <header><h1>Open <span>Sesame</span> / Replay</h1><div><button id="toggle">Pause</button> <button id="restart">Restart</button></div></header>
+  <main><div class="scores" id="scores">Loading replay…</div><div id="timeline"></div></main>
+  <script>
+    const timeline=document.querySelector("#timeline"), scores=document.querySelector("#scores"), toggle=document.querySelector("#toggle"), restart=document.querySelector("#restart");
+    let rows=[], cursor=0, playing=true, timer;
+    const ws=new WebSocket(location.href.replace(/^http/,"ws").replace(/\/client\/replay.*/,"/replay"));
+    function showNext() {
+      if(!playing || !rows.length) return;
+      rows.forEach((r,i)=>r.classList.toggle("active",i<=cursor));
+      rows[Math.min(cursor,rows.length-1)].scrollIntoView({block:"center",behavior:"smooth"});
+      cursor++;
+      if(cursor>=rows.length) cursor=0;
+    }
+    function render(replay) {
+      timeline.replaceChildren(); rows=[]; cursor=0;
+      const result=replay.results;
+      scores.textContent=result ? result.player_names.map((n,i)=>`${n}: ${result.scores[i]} (A${result.attack_scores[i]} D${result.defense_scores[i]})`).join("  ·  ") : "Incomplete replay";
+      replay.events.forEach(event => {
+        const row=document.createElement("div"); row.className="event";
+        const type=document.createElement("div"); type.className="type"; type.textContent=event.type.replaceAll("_"," ");
+        const body=document.createElement("div");
+        if(event.type==="duel_turn") {
+          const title=document.createElement("div"); title.className=event.extracted?"breach":"";
+          title.textContent=`${event.attacker_name} → ${event.defender_name} · turn ${event.turn} · ${event.extracted?"EXTRACTION":"blocked"}`;
+          const detail=document.createElement("pre"); detail.textContent=`ATTACK\n${event.attack}\n\nRESPONSE\n${event.response}`;
+          body.append(title,detail);
+        } else {
+          const detail=document.createElement("pre"); detail.textContent=JSON.stringify(event,null,2); body.append(detail);
+        }
+        row.append(type,body); timeline.append(row); rows.push(row);
+      });
+      clearInterval(timer); timer=setInterval(showNext,1200); showNext();
+    }
+    ws.onmessage=({data})=>{const message=JSON.parse(data); if(message.type==="replay") render(message);};
+    toggle.onclick=()=>{playing=!playing; toggle.textContent=playing?"Pause":"Play";};
+    restart.onclick=()=>{cursor=0; playing=true; toggle.textContent="Pause"; showNext();};
+  </script>
+</body>
+</html>

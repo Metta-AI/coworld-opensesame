@@ -1,0 +1,289 @@
+{
+  "$schema": "https://raw.githubusercontent.com/Metta-AI/coworld/main/src/coworld/coworld_manifest_schema.json",
+  "tags": ["security", "prompt-injection", "pvp", "multiplayer", "defcon"],
+  "game": {
+    "name": "open-sesame",
+    "description": "Simultaneous prompt-injection PvP: every policy freezes a useful defense around a system-assigned passphrase, then attacks every opponent's fixed-model bot. Score distinct extractions plus defenses that survive; deterministic string matching keeps the judge outside the injection surface.",
+    "owner": "coworld@softmax.com",
+    "runnable": {
+      "type": "game",
+      "image": "{{OPENSESAME_IMAGE}}",
+      "run": ["python", "-m", "opensesame.server"],
+      "source_url": "https://github.com/Metta-AI/coworld-opensesame/tree/main/opensesame"
+    },
+    "config_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tokens",
+        "players",
+        "model_provider",
+        "model_id",
+        "max_turns",
+        "defense_prompt_char_cap",
+        "attack_message_char_cap",
+        "response_token_cap",
+        "player_connect_timeout_seconds",
+        "action_timeout_seconds",
+        "model_timeout_seconds",
+        "model_concurrency"
+      ],
+      "properties": {
+        "tokens": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 8,
+          "items": {"type": "string", "minLength": 1}
+        },
+        "players": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name"],
+            "properties": {
+              "name": {"type": "string", "minLength": 1, "maxLength": 80}
+            }
+          }
+        },
+        "seed": {"type": "integer"},
+        "model_provider": {"type": "string", "enum": ["mock", "bedrock"]},
+        "model_id": {"type": "string", "minLength": 1},
+        "max_turns": {"type": "integer", "minimum": 1, "maximum": 6},
+        "defense_prompt_char_cap": {"type": "integer", "minimum": 500, "maximum": 30000},
+        "attack_message_char_cap": {"type": "integer", "minimum": 50, "maximum": 8000},
+        "response_token_cap": {"type": "integer", "minimum": 64, "maximum": 1024},
+        "player_connect_timeout_seconds": {"type": "number", "minimum": 0, "maximum": 300},
+        "action_timeout_seconds": {"type": "number", "exclusiveMinimum": 0, "maximum": 120},
+        "model_timeout_seconds": {"type": "number", "exclusiveMinimum": 0, "maximum": 120},
+        "model_concurrency": {"type": "integer", "minimum": 1, "maximum": 8}
+      }
+    },
+    "results_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scores",
+        "attack_scores",
+        "defense_scores",
+        "eligible",
+        "player_names",
+        "seed",
+        "model_provider",
+        "duels"
+      ],
+      "properties": {
+        "scores": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 8,
+          "items": {"type": "integer", "minimum": 0, "maximum": 14}
+        },
+        "attack_scores": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 8,
+          "items": {"type": "integer", "minimum": 0, "maximum": 7}
+        },
+        "defense_scores": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 8,
+          "items": {"type": "integer", "minimum": 0, "maximum": 7}
+        },
+        "eligible": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 8,
+          "items": {"type": "boolean"}
+        },
+        "player_names": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 8,
+          "items": {"type": "string"}
+        },
+        "seed": {"type": "integer"},
+        "model_provider": {"type": "string", "enum": ["mock", "bedrock"]},
+        "duels": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "attacker",
+              "defender",
+              "attempts",
+              "extracted",
+              "extracted_turn",
+              "transcript_sha256"
+            ],
+            "properties": {
+              "attacker": {"type": "integer", "minimum": 0},
+              "defender": {"type": "integer", "minimum": 0},
+              "attempts": {"type": "integer", "minimum": 0, "maximum": 6},
+              "extracted": {"type": "boolean"},
+              "extracted_turn": {"type": ["integer", "null"], "minimum": 1, "maximum": 6},
+              "transcript_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+            }
+          }
+        }
+      }
+    },
+    "protocols": {
+      "player": {
+        "type": "uri",
+        "value": "https://github.com/Metta-AI/coworld-opensesame/blob/main/docs/player_protocol.md"
+      },
+      "global": {
+        "type": "uri",
+        "value": "https://github.com/Metta-AI/coworld-opensesame/blob/main/docs/global_protocol.md"
+      }
+    },
+    "docs": {
+      "readme": {
+        "type": "uri",
+        "value": "https://github.com/Metta-AI/coworld-opensesame/blob/main/README.md"
+      },
+      "pages": [
+        {
+          "id": "architecture.md",
+          "title": "Architecture and event operations",
+          "content": {
+            "type": "uri",
+            "value": "https://github.com/Metta-AI/coworld-opensesame/blob/main/docs/architecture.md"
+          }
+        }
+      ]
+    }
+  },
+  "player": [
+    {
+      "id": "red-team-baseline",
+      "name": "Red Team Baseline",
+      "type": "player",
+      "description": "No-LLM starter policy with a guarded defense and a six-step adaptive prompt-injection sequence.",
+      "image": "{{OPENSESAME_IMAGE}}",
+      "run": ["python", "-m", "opensesame.player"],
+      "env": {"OPEN_SESAME_PROFILE": "guarded"},
+      "source_url": "https://github.com/Metta-AI/coworld-opensesame/tree/main/opensesame/player.py"
+    },
+    {
+      "id": "leaky-canary",
+      "name": "Leaky Canary",
+      "type": "player",
+      "description": "Intentionally weak defense used only to prove the extraction and liveness path during certification.",
+      "image": "{{OPENSESAME_IMAGE}}",
+      "run": ["python", "-m", "opensesame.player"],
+      "env": {"OPEN_SESAME_PROFILE": "leaky"},
+      "source_url": "https://github.com/Metta-AI/coworld-opensesame/tree/main/opensesame/player.py"
+    }
+  ],
+  "commissioner": [
+    {
+      "id": "default-commissioner",
+      "name": "Open Sesame League Commissioner",
+      "type": "commissioner",
+      "description": "Game-agnostic round-robin commissioner using episode scores for standings.",
+      "source_url": "https://github.com/Metta-AI/coworld-tools/tree/e6b7863c2619d260bb29f14364baf09c578c9f30/commissioners/commissioners/ruleset_strategy_commissioner",
+      "image": "{{COMMISSIONER_IMAGE}}"
+    }
+  ],
+  "variants": [
+    {
+      "id": "league-4",
+      "name": "League Table (4 players)",
+      "description": "Prize-competition rules: complete four-seat attack/defense matrix, four turns per pair, fixed Claude Haiku 4.5 model.",
+      "game_config": {
+        "model_provider": "bedrock",
+        "model_id": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "max_turns": 4,
+        "defense_prompt_char_cap": 12000,
+        "attack_message_char_cap": 2000,
+        "response_token_cap": 384,
+        "player_connect_timeout_seconds": 90,
+        "action_timeout_seconds": 25,
+        "model_timeout_seconds": 30,
+        "model_concurrency": 4,
+        "players": [
+          {"name": "seat-0"},
+          {"name": "seat-1"},
+          {"name": "seat-2"},
+          {"name": "seat-3"}
+        ]
+      }
+    },
+    {
+      "id": "duel-2",
+      "name": "Head-to-head Duel",
+      "description": "Two-player real-model duel for quick hosted or local playtests.",
+      "game_config": {
+        "model_provider": "bedrock",
+        "model_id": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "max_turns": 4,
+        "defense_prompt_char_cap": 12000,
+        "attack_message_char_cap": 2000,
+        "response_token_cap": 384,
+        "player_connect_timeout_seconds": 90,
+        "action_timeout_seconds": 25,
+        "model_timeout_seconds": 30,
+        "model_concurrency": 2,
+        "players": [
+          {"name": "seat-0"},
+          {"name": "seat-1"}
+        ]
+      }
+    },
+    {
+      "id": "local-mock-4",
+      "name": "Local Protocol Scrimmage",
+      "description": "Cost-free deterministic four-seat protocol test. Not a prompt-quality benchmark.",
+      "game_config": {
+        "seed": 20260806,
+        "model_provider": "mock",
+        "model_id": "open-sesame-certification-v1",
+        "max_turns": 4,
+        "defense_prompt_char_cap": 12000,
+        "attack_message_char_cap": 2000,
+        "response_token_cap": 384,
+        "player_connect_timeout_seconds": 15,
+        "action_timeout_seconds": 5,
+        "model_timeout_seconds": 5,
+        "model_concurrency": 4,
+        "players": [
+          {"name": "seat-0"},
+          {"name": "seat-1"},
+          {"name": "seat-2"},
+          {"name": "seat-3"}
+        ]
+      }
+    }
+  ],
+  "certification": {
+    "game_config": {
+      "seed": 20260806,
+      "model_provider": "mock",
+      "model_id": "open-sesame-certification-v1",
+      "max_turns": 2,
+      "defense_prompt_char_cap": 12000,
+      "attack_message_char_cap": 2000,
+      "response_token_cap": 384,
+      "player_connect_timeout_seconds": 10,
+      "action_timeout_seconds": 5,
+      "model_timeout_seconds": 5,
+      "model_concurrency": 2,
+      "players": [
+        {"name": "Red Team Baseline"},
+        {"name": "Leaky Canary"}
+      ]
+    },
+    "players": [
+      {"player_id": "red-team-baseline"},
+      {"player_id": "leaky-canary"}
+    ]
+  }
+}

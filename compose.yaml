@@ -1,0 +1,10 @@
+services:
+  opensesame:
+    image: coworld-opensesame:latest
+    platform: linux/amd64
+    build:
+      context: .
+  commissioner:
+    image: ghcr.io/metta-ai/commissioners-default:latest
+    platform: linux/amd64
+

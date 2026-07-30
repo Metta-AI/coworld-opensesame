@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Open Sesame — Live Arena</title>
+  <style>
+    :root { color-scheme:dark; --acid:#d7ff45; --red:#ff4d5e; --paper:#f1ecd9; --line:#30342e; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:#090a09; color:var(--paper); font:14px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace; }
+    header { min-height:36vh; padding:clamp(28px,6vw,80px); display:flex; flex-direction:column; justify-content:end; border-bottom:1px solid var(--line); background:radial-gradient(circle at 80% 20%,#263114 0,transparent 35%); }
+    h1 { margin:0; max-width:900px; font:800 clamp(52px,11vw,150px)/.75 system-ui,sans-serif; letter-spacing:-.08em; text-transform:uppercase; }
+    h1 span { color:var(--acid); }
+    .kicker { color:var(--red); letter-spacing:.2em; margin-bottom:18px; text-transform:uppercase; }
+    main { display:grid; grid-template-columns:1fr 1fr; min-height:64vh; }
+    section { padding:28px clamp(20px,4vw,54px); border-right:1px solid var(--line); }
+    h2 { color:var(--acid); font-size:12px; letter-spacing:.18em; text-transform:uppercase; }
+    .phase { font:700 clamp(24px,4vw,56px)/1 system-ui,sans-serif; text-transform:uppercase; }
+    .score { display:grid; grid-template-columns:1fr auto; gap:10px; padding:14px 0; border-top:1px solid var(--line); }
+    .score b { color:var(--acid); font-size:22px; }
+    .event { padding:13px 0; border-top:1px solid var(--line); color:#a9a69b; }
+    .breach { color:var(--red); }
+    @media(max-width:760px) { main { grid-template-columns:1fr; } section { border-right:0; border-bottom:1px solid var(--line); } }
+  </style>
+</head>
+<body>
+  <header><div class="kicker">DEF CON · AI Village · Live prompt-injection PvP</div><h1>Open <span>Sesame</span></h1></header>
+  <main>
+    <section><h2>Match state</h2><div class="phase" id="phase">Waiting</div><div id="scores"></div></section>
+    <section><h2>Extraction feed</h2><div id="feed"></div></section>
+  </main>
+  <script>
+    const phase = document.querySelector("#phase"), scores = document.querySelector("#scores"), feed = document.querySelector("#feed");
+    const ws = new WebSocket(location.href.replace(/^http/, "ws").replace(/\/client\/global.*/, "/global"));
+    function addEvent(event) {
+      if (event.type === "phase") phase.textContent = event.phase;
+      if (event.type === "registration") {
+        const row = document.createElement("div"); row.className = "event";
+        row.textContent = `${event.player_name}: ${event.eligible ? "defense accepted" : "defense rejected · " + event.reason}`; feed.prepend(row);
+      }
+      if (event.type === "duel_turn") {
+        const row = document.createElement("div"); row.className = "event" + (event.extracted ? " breach" : "");
+        row.textContent = `${event.attacker_name} → ${event.defender_name} · turn ${event.turn} · ${event.extracted ? "EXTRACTED" : "blocked"}`; feed.prepend(row);
+      }
+      if (event.type === "final_scores") renderScores(event);
+    }
+    function renderScores(result) {
+      scores.replaceChildren();
+      const order = result.player_names.map((name,i)=>({name,score:result.scores[i],attack:result.attack_scores[i],defense:result.defense_scores[i]})).sort((a,b)=>b.score-a.score);
+      order.forEach(item => {
+        const row=document.createElement("div"); row.className="score";
+        const label=document.createElement("span"); label.textContent=`${item.name} · A${item.attack} D${item.defense}`;
+        const value=document.createElement("b"); value.textContent=item.score; row.append(label,value); scores.append(row);
+      });
+    }
+    ws.onmessage = ({data}) => {
+      const message=JSON.parse(data);
+      if(message.type==="snapshot") { phase.textContent=message.phase; message.events.forEach(addEvent); if(message.results) renderScores(message.results); }
+      else addEvent(message);
+    };
+  </script>
+</body>
+</html>
+
