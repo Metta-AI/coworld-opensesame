@@ -164,6 +164,7 @@ class Runtime:
     async def run_episode(self) -> None:
         assert self.config is not None
         assert self.model is not None
+        episode_started_at = asyncio.get_running_loop().time()
         self.phase = "registration"
         await self.publish({"type": "phase", "phase": self.phase})
         responses = await asyncio.gather(*(self._register_seat(slot) for slot in range(len(self.config.tokens))))
@@ -207,6 +208,11 @@ class Runtime:
             seed=self.seed,
             model_provider=self.config.model_provider,
         )
+        remaining_minimum = self.config.minimum_episode_seconds - (
+            asyncio.get_running_loop().time() - episode_started_at
+        )
+        if remaining_minimum > 0:
+            await asyncio.sleep(remaining_minimum)
         await self.publish({"type": "final_scores", **self.results})
         await self._send_final_to_players()
         await asyncio.sleep(0.25)

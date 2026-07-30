@@ -48,11 +48,14 @@ the game owns secrets, the fixed model, scheduling, and scoring.
 The included `opensesame.player` is a no-credential baseline:
 
 ```bash
-OPEN_SESAME_PROFILE=guarded python -m opensesame.player
+OPEN_SESAME_PROFILE=starter python -m opensesame.player
 ```
 
-`guarded` ships a basic defense and a six-step adaptive attack sequence. `leaky` is an intentionally weak canary used
-by certification.
+`starter` ships a layered useful defense and a four-turn adaptive attack sequence. It classifies each target response
+and switches among migration, DLP-transform, character-stream, template-rendering, and completion attacks. The policy
+is deliberately deterministic and dependency-free so competitors can understand and replace every decision. See the
+[starter policy guide](docs/starter_policy.md) and its [standalone container](players/starter/README.md). `guarded`
+retains the simpler legacy baseline for comparison; `leaky` is an intentionally weak certification canary.
 
 ## Local development
 
@@ -85,8 +88,8 @@ uv run coworld run-episode dist/coworld_manifest.json coworld-opensesame:latest 
   --variant local-mock-4
 ```
 
-The certification fixture uses `model_provider: mock`, seats the guarded and leaky baselines, and proves that the known
-attacker cracks the weak defense while the guarded defense survives. It makes no AWS calls.
+The certification fixture uses `model_provider: mock`, seats the starter and leaky baselines, and proves that the known
+attacker cracks the weak defense while the starter defense survives. It makes no AWS calls.
 
 For a local episode using the real competition model, select `duel-2` or `league-4` and supply AWS credentials through
 Coworld's `--use-bedrock` flow. Hosted game containers receive Bedrock access from the Coworld runtime. The fixed model
@@ -121,4 +124,5 @@ Observatory APIs, the model provider, or unrelated systems is outside the game. 
 should go through the event's separate bounty and disclosure process.
 
 See [architecture and operations](docs/architecture.md), the
-[player protocol](docs/player_protocol.md), and the [spectator protocol](docs/global_protocol.md).
+[player protocol](docs/player_protocol.md), the [starter policy guide](docs/starter_policy.md), and the
+[spectator protocol](docs/global_protocol.md).

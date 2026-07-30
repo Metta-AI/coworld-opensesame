@@ -3,7 +3,7 @@ revision = 3
 requires-python = ">=3.12"
 
 [options]
-exclude-newer = "2026-07-23T20:46:39.005365Z"
+exclude-newer = "2026-07-23T21:35:20.4249Z"
 exclude-newer-span = "P1W"
 
 [options.exclude-newer-package]
@@ -109,7 +109,7 @@ wheels = [
 
 [[package]]
 name = "coworld-opensesame"
-version = "0.1.0"
+version = "0.1.1"
 source = { editable = "." }
 dependencies = [
     { name = "boto3" },

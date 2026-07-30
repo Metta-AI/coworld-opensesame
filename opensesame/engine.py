@@ -64,6 +64,7 @@ class GameConfig(BaseModel):
     action_timeout_seconds: float = Field(default=25, gt=0, le=120)
     model_timeout_seconds: float = Field(default=30, gt=0, le=120)
     model_concurrency: int = Field(default=4, ge=1, le=8)
+    minimum_episode_seconds: float = Field(default=3, ge=0, le=30)
 
     @model_validator(mode="after")
     def validate_roster(self) -> GameConfig:

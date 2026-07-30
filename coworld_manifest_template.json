@@ -27,7 +27,8 @@
         "player_connect_timeout_seconds",
         "action_timeout_seconds",
         "model_timeout_seconds",
-        "model_concurrency"
+        "model_concurrency",
+        "minimum_episode_seconds"
       ],
       "properties": {
         "tokens": {
@@ -59,7 +60,8 @@
         "player_connect_timeout_seconds": {"type": "number", "minimum": 0, "maximum": 300},
         "action_timeout_seconds": {"type": "number", "exclusiveMinimum": 0, "maximum": 120},
         "model_timeout_seconds": {"type": "number", "exclusiveMinimum": 0, "maximum": 120},
-        "model_concurrency": {"type": "integer", "minimum": 1, "maximum": 8}
+        "model_concurrency": {"type": "integer", "minimum": 1, "maximum": 8},
+        "minimum_episode_seconds": {"type": "number", "minimum": 0, "maximum": 30}
       }
     },
     "results_schema": {
@@ -157,6 +159,14 @@
             "type": "uri",
             "value": "https://github.com/Metta-AI/coworld-opensesame/blob/main/docs/architecture.md"
           }
+        },
+        {
+          "id": "starter_policy.md",
+          "title": "Starter policy and benchmark",
+          "content": {
+            "type": "uri",
+            "value": "https://github.com/Metta-AI/coworld-opensesame/blob/main/docs/starter_policy.md"
+          }
         }
       ]
     }
@@ -164,13 +174,13 @@
   "player": [
     {
       "id": "red-team-baseline",
-      "name": "Red Team Baseline",
+      "name": "Open Sesame Starter",
       "type": "player",
-      "description": "No-LLM starter policy with a guarded defense and a six-step adaptive prompt-injection sequence.",
+      "description": "Submission-ready no-LLM starter with same-format secret camouflage, strict useful-defense rules, response classification, and four adaptive prompt-injection families.",
       "image": "{{OPENSESAME_IMAGE}}",
       "run": ["python", "-m", "opensesame.player"],
-      "env": {"OPEN_SESAME_PROFILE": "guarded"},
-      "source_url": "https://github.com/Metta-AI/coworld-opensesame/tree/main/opensesame/player.py"
+      "env": {"OPEN_SESAME_PROFILE": "starter"},
+      "source_url": "https://github.com/Metta-AI/coworld-opensesame/tree/main/players/starter"
     },
     {
       "id": "leaky-canary",
@@ -209,6 +219,7 @@
         "action_timeout_seconds": 25,
         "model_timeout_seconds": 30,
         "model_concurrency": 4,
+        "minimum_episode_seconds": 3,
         "players": [
           {"name": "seat-0"},
           {"name": "seat-1"},
@@ -232,6 +243,7 @@
         "action_timeout_seconds": 25,
         "model_timeout_seconds": 30,
         "model_concurrency": 2,
+        "minimum_episode_seconds": 3,
         "players": [
           {"name": "seat-0"},
           {"name": "seat-1"}
@@ -254,6 +266,7 @@
         "action_timeout_seconds": 5,
         "model_timeout_seconds": 5,
         "model_concurrency": 4,
+        "minimum_episode_seconds": 3,
         "players": [
           {"name": "seat-0"},
           {"name": "seat-1"},
@@ -276,8 +289,9 @@
       "action_timeout_seconds": 5,
       "model_timeout_seconds": 5,
       "model_concurrency": 2,
+      "minimum_episode_seconds": 5,
       "players": [
-        {"name": "Red Team Baseline"},
+        {"name": "Open Sesame Starter"},
         {"name": "Leaky Canary"}
       ]
     },

@@ -22,7 +22,7 @@ class ScriptedRuntime(Runtime):
         *,
         timeout: float | None = None,
     ) -> dict[str, Any] | None:
-        profile = "guarded" if slot == 0 else "leaky"
+        profile = "starter" if slot == 0 else "leaky"
         if payload["type"] == "register_request":
             return {"defense_prompt": defense_prompt(profile, payload["passphrase"])}
         if payload["type"] == "attack_request":
@@ -39,7 +39,7 @@ class ScriptedRuntime(Runtime):
 def certification_config() -> GameConfig:
     return GameConfig(
         tokens=["token-a", "token-b"],
-        players=[{"name": "Guarded"}, {"name": "Leaky"}],
+        players=[{"name": "Starter"}, {"name": "Leaky"}],
         seed=20260806,
         model_provider="mock",
         model_id="certification",
@@ -48,6 +48,7 @@ def certification_config() -> GameConfig:
         action_timeout_seconds=1,
         model_timeout_seconds=1,
         model_concurrency=2,
+        minimum_episode_seconds=0,
     )
 
 
