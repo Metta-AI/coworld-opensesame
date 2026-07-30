@@ -13,4 +13,3 @@ Event types:
 While an episode is active, `duel_turn` sets `payloads_embargoed: true` and omits attack/response text. The replay
 contains those fields after passphrase redaction. The global stream never contains assigned passphrases or defense
 prompts.
-

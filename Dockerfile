@@ -9,4 +9,3 @@ COPY opensesame ./opensesame
 RUN pip install --no-cache-dir .
 
 CMD ["python", "-m", "opensesame.server"]
-

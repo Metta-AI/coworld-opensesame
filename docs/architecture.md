@@ -70,4 +70,3 @@ Before opening the prize league:
 7. Decide whether replay payloads publish immediately, after a round, or after the event. The current code publishes
    them in the completed replay and only embargoes them during the live episode.
 8. Run the walk-up lobby as a separate persistent deployment if `coworld play` is not suitable for the venue network.
-

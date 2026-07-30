@@ -7,4 +7,3 @@ services:
   commissioner:
     image: ghcr.io/metta-ai/commissioners-default:latest
     platform: linux/amd64
-
