@@ -80,6 +80,9 @@ uv run coworld play dist/coworld_manifest.json
 uv run coworld certify dist/coworld_manifest.json
 ```
 
+`coworld build` also creates `dist/build/static-replay-viewer`. Observatory serves that immutable bundle directly and
+passes the replay artifact URL as `index.html?replay=<url>`; replay viewing does not start the game image.
+
 To run the four-seat mock scrimmage with one local image reused across the table:
 
 ```bash

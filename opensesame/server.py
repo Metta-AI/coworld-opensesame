@@ -39,24 +39,23 @@ class PlayerConnection:
 class Runtime:
     def __init__(
         self,
-        config: GameConfig | None,
+        config: GameConfig,
         *,
         model: TextModel | None = None,
-        replay: dict[str, Any] | None = None,
     ) -> None:
         self.config = config
-        self.replay = replay
-        self.replay_mode = replay is not None
-        self.model = model
-        if config is not None and model is None:
-            self.model = make_model(
+        self.model = (
+            model
+            if model is not None
+            else make_model(
                 config.model_provider,
                 config.model_id,
                 max_tokens=config.response_token_cap,
                 timeout_seconds=config.model_timeout_seconds,
             )
-        self.seed = config.seed if config and config.seed is not None else secrets.randbits(63)
-        count = len(config.tokens) if config else 0
+        )
+        self.seed = config.seed if config.seed is not None else secrets.randbits(63)
+        count = len(config.tokens)
         self.passphrases = generate_passphrases(count, self.seed)
         self.registrations = [DefenseRegistration() for _ in range(count)]
         self.duels = build_duels(count)
@@ -64,19 +63,17 @@ class Runtime:
         self.global_viewers: set[WebSocket] = set()
         self.replay_events: list[dict[str, Any]] = []
         self.started = False
-        self.done = self.replay_mode
-        self.phase = "replay" if self.replay_mode else "waiting"
-        self.results: dict[str, Any] | None = replay.get("results") if replay else None
+        self.done = False
+        self.phase = "waiting"
+        self.results: dict[str, Any] | None = None
         self._episode_task: asyncio.Task[None] | None = None
         self._connect_timeout_task: asyncio.Task[None] | None = None
         self._request_counter = 0
-        concurrency = config.model_concurrency if config else 1
-        self._model_semaphore = asyncio.Semaphore(concurrency)
+        self._model_semaphore = asyncio.Semaphore(config.model_concurrency)
         self.on_episode_complete: Callable[[], Awaitable[None] | None] | None = None
 
     async def startup(self) -> None:
-        if not self.replay_mode and self.config is not None:
-            self._connect_timeout_task = asyncio.create_task(self._start_after_connect_timeout())
+        self._connect_timeout_task = asyncio.create_task(self._start_after_connect_timeout())
 
     async def shutdown(self) -> None:
         for task in (self._connect_timeout_task, self._episode_task):
@@ -86,7 +83,7 @@ class Runtime:
                     await task
 
     async def connect_player(self, slot: int, token: str, websocket: WebSocket) -> None:
-        if self.config is None or slot < 0 or slot >= len(self.config.tokens) or token != self.config.tokens[slot]:
+        if slot < 0 or slot >= len(self.config.tokens) or token != self.config.tokens[slot]:
             await websocket.close(code=1008)
             return
         await websocket.accept()
@@ -117,13 +114,12 @@ class Runtime:
                 del self.connections[slot]
 
     def _start_episode(self) -> None:
-        if self.started or self.replay_mode:
+        if self.started:
             return
         self.started = True
         self._episode_task = asyncio.create_task(self.run_episode())
 
     async def _start_after_connect_timeout(self) -> None:
-        assert self.config is not None
         await asyncio.sleep(self.config.player_connect_timeout_seconds)
         if not self.started:
             logger.warning("player connect deadline reached; starting with %d connected seats", len(self.connections))
@@ -136,7 +132,6 @@ class Runtime:
         *,
         timeout: float | None = None,
     ) -> dict[str, Any] | None:
-        assert self.config is not None
         connection = self.connections.get(slot)
         if connection is None:
             return None
@@ -162,8 +157,6 @@ class Runtime:
                 return message
 
     async def run_episode(self) -> None:
-        assert self.config is not None
-        assert self.model is not None
         episode_started_at = asyncio.get_running_loop().time()
         self.phase = "registration"
         await self.publish({"type": "phase", "phase": self.phase})
@@ -225,8 +218,6 @@ class Runtime:
                 await outcome
 
     async def _register_seat(self, slot: int) -> DefenseRegistration:
-        assert self.config is not None
-        assert self.model is not None
         passphrase = self.passphrases[slot]
         response = await self.request_player(
             slot,
@@ -272,8 +263,6 @@ class Runtime:
         turn: int,
         offset: int,
     ) -> dict[str, Any] | None:
-        assert self.config is not None
-        assert self.model is not None
         duel = self.duels[(attacker, defender)]
         if duel.extracted:
             return None
@@ -399,12 +388,6 @@ class Runtime:
         finally:
             self.global_viewers.discard(websocket)
 
-    async def connect_replay(self, websocket: WebSocket) -> None:
-        await websocket.accept()
-        await websocket.send_json({"type": "replay", **(self.replay or self._replay_payload())})
-        async for _ in websocket.iter_text():
-            await websocket.send_json({"type": "replay", **(self.replay or self._replay_payload())})
-
     async def _send_final_to_players(self) -> None:
         assert self.results is not None
         for slot, connection in list(self.connections.items()):
@@ -440,7 +423,6 @@ class Runtime:
             )
 
     def _replay_payload(self) -> dict[str, Any]:
-        assert self.config is not None
         safe_config = self.config.model_dump(exclude={"tokens"})
         return {
             "version": 1,
@@ -452,12 +434,9 @@ class Runtime:
 
 
 def runtime_from_environment() -> Runtime:
-    replay_uri = os.environ.get("COGAME_LOAD_REPLAY_URI")
-    if replay_uri:
-        return Runtime(None, replay=json.loads(read_data(replay_uri)))
     config_uri = os.environ.get("COGAME_CONFIG_URI")
     if not config_uri:
-        raise RuntimeError("COGAME_CONFIG_URI is required outside replay mode")
+        raise RuntimeError("COGAME_CONFIG_URI is required")
     config = GameConfig.model_validate_json(read_data(config_uri))
     return Runtime(config)
 
@@ -473,7 +452,7 @@ def create_app(runtime: Runtime) -> FastAPI:
 
     @app.get("/healthz")
     def healthz() -> dict[str, Any]:
-        return {"ok": True, "mode": "replay" if runtime.replay_mode else "episode"}
+        return {"ok": True, "mode": "episode"}
 
     @app.get("/client/player")
     def player_client() -> HTMLResponse:
@@ -482,10 +461,6 @@ def create_app(runtime: Runtime) -> FastAPI:
     @app.get("/client/global")
     def global_client() -> HTMLResponse:
         return HTMLResponse((STATIC_DIR / "global.html").read_text())
-
-    @app.get("/client/replay")
-    def replay_client() -> HTMLResponse:
-        return HTMLResponse((STATIC_DIR / "replay.html").read_text())
 
     @app.websocket("/player")
     async def player_socket(websocket: WebSocket) -> None:
@@ -499,10 +474,6 @@ def create_app(runtime: Runtime) -> FastAPI:
     @app.websocket("/global")
     async def global_socket(websocket: WebSocket) -> None:
         await runtime.connect_global(websocket)
-
-    @app.websocket("/replay")
-    async def replay_socket(websocket: WebSocket) -> None:
-        await runtime.connect_replay(websocket)
 
     return app
 

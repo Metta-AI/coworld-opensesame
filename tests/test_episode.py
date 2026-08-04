@@ -80,13 +80,12 @@ async def test_full_certification_episode_and_secret_redaction(tmp_path: Path, m
     assert "tokens" not in replay_payload["config"]
 
 
-def test_http_and_replay_surface() -> None:
-    replay = {"version": 1, "events": [], "results": {"scores": [1, 0]}}
-    app = create_app(Runtime(None, replay=replay))
+def test_http_surface() -> None:
+    app = create_app(Runtime(certification_config(), model=MockModel()))
     with TestClient(app) as client:
-        assert client.get("/healthz").json() == {"ok": True, "mode": "replay"}
+        assert client.get("/healthz").json() == {"ok": True, "mode": "episode"}
         assert "Open Sesame" in client.get("/client/global").text
-        assert "Replay" in client.get("/client/replay").text
+        assert client.get("/client/replay").status_code == 404
 
 
 def test_manifest_configs_match_runtime_and_results_schema() -> None:
