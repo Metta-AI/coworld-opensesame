@@ -15,18 +15,17 @@
     .event { display:grid; grid-template-columns:110px 1fr; gap:20px; padding:18px 0; border-top:1px solid var(--line); opacity:.24; }
     .event.active { opacity:1; }
     .type { color:var(--acid); text-transform:uppercase; }
-    .breach { color:var(--red); }
+    .breach, .error { color:var(--red); }
     pre { white-space:pre-wrap; overflow-wrap:anywhere; margin:8px 0 0; color:#aaa79d; }
     .scores { font:700 24px system-ui,sans-serif; margin-bottom:30px; }
   </style>
 </head>
 <body>
   <header><h1>Open <span>Sesame</span> / Replay</h1><div><button id="toggle">Pause</button> <button id="restart">Restart</button></div></header>
-  <main><div class="scores" id="scores">Loading replay…</div><div id="timeline"></div></main>
+  <main><div class="scores" id="scores" aria-live="polite">Loading replay…</div><div id="timeline"></div></main>
   <script>
     const timeline=document.querySelector("#timeline"), scores=document.querySelector("#scores"), toggle=document.querySelector("#toggle"), restart=document.querySelector("#restart");
     let rows=[], cursor=0, playing=true, timer;
-    const ws=new WebSocket(location.href.replace(/^http/,"ws").replace(/\/client\/replay.*/,"/replay"));
     function showNext() {
       if(!playing || !rows.length) return;
       rows.forEach((r,i)=>r.classList.toggle("active",i<=cursor));
@@ -54,9 +53,32 @@
       });
       clearInterval(timer); timer=setInterval(showNext,1200); showNext();
     }
-    ws.onmessage=({data})=>{const message=JSON.parse(data); if(message.type==="replay") render(message);};
     toggle.onclick=()=>{playing=!playing; toggle.textContent=playing?"Pause":"Play";};
     restart.onclick=()=>{cursor=0; playing=true; toggle.textContent="Pause"; showNext();};
+
+    const replayUrl=new URLSearchParams(location.search).get("replay");
+    if(!replayUrl) {
+      scores.className="scores error";
+      scores.setAttribute("role","alert");
+      scores.textContent="Replay could not be loaded: missing ?replay= URL.";
+    } else {
+      fetch(replayUrl,{credentials:"omit"})
+        .then(response=>{
+          if(!response.ok) throw new Error(`HTTP ${response.status}`);
+          return response.arrayBuffer();
+        })
+        .then(bytes=>{
+          const replay=JSON.parse(new TextDecoder().decode(bytes));
+          if(replay.version!==1) throw new Error(`unsupported replay version ${replay.version}`);
+          render(replay);
+        })
+        .catch(error=>{
+          clearInterval(timer);
+          scores.className="scores error";
+          scores.setAttribute("role","alert");
+          scores.textContent=`Replay could not be loaded: ${error.message}.`;
+        });
+    }
   </script>
 </body>
 </html>
