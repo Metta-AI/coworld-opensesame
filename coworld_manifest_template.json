@@ -54,7 +54,7 @@
           }
         },
         "seed": {"type": "integer"},
-        "model_provider": {"type": "string", "enum": ["mock", "bedrock"]},
+        "model_provider": {"type": "string", "enum": ["mock", "llm", "bedrock"]},
         "model_id": {"type": "string", "minLength": 1},
         "max_turns": {"type": "integer", "minimum": 1, "maximum": 6},
         "defense_prompt_char_cap": {"type": "integer", "minimum": 500, "maximum": 30000},
@@ -113,7 +113,7 @@
           "items": {"type": "string"}
         },
         "seed": {"type": "integer"},
-        "model_provider": {"type": "string", "enum": ["mock", "bedrock"]},
+        "model_provider": {"type": "string", "enum": ["mock", "llm", "bedrock"]},
         "duels": {
           "type": "array",
           "items": {
@@ -212,8 +212,8 @@
       "name": "League Table (4 players)",
       "description": "Prize-competition rules: complete four-seat attack/defense matrix, four turns per pair, fixed Claude Haiku 4.5 model.",
       "game_config": {
-        "model_provider": "bedrock",
-        "model_id": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "model_provider": "llm",
+        "model_id": "anthropic/claude-haiku-4.5",
         "max_turns": 4,
         "defense_prompt_char_cap": 12000,
         "attack_message_char_cap": 2000,
@@ -236,8 +236,8 @@
       "name": "Head-to-head Duel",
       "description": "Two-player real-model duel for quick hosted or local playtests.",
       "game_config": {
-        "model_provider": "bedrock",
-        "model_id": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "model_provider": "llm",
+        "model_id": "anthropic/claude-haiku-4.5",
         "max_turns": 4,
         "defense_prompt_char_cap": 12000,
         "attack_message_char_cap": 2000,

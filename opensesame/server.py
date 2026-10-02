@@ -244,6 +244,7 @@ class Runtime:
                         prompt,
                         passphrase,
                         prompt_char_cap=self.config.defense_prompt_char_cap,
+                        slot=slot,
                     ),
                     timeout=self.config.model_timeout_seconds * 3 + 5,
                 )
@@ -293,6 +294,7 @@ class Runtime:
                     self.model.complete(
                         self.registrations[defender].prompt,
                         [*duel.transcript, {"role": "user", "content": message}],
+                        slot=attacker,
                     ),
                     timeout=self.config.model_timeout_seconds,
                 )
