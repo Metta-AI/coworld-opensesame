@@ -94,14 +94,14 @@ uv run coworld run-episode dist/coworld_manifest.json coworld-opensesame:latest 
 The certification fixture uses `model_provider: mock`, seats the starter and leaky baselines, and proves that the known
 attacker cracks the weak defense while the starter defense survives. It makes no AWS calls.
 
-For a local episode using the real competition model, select `duel-2` or `league-4` and supply AWS credentials through
-Coworld's `--use-bedrock` flow. Hosted game containers receive Bedrock access from the Coworld runtime. The fixed model
-ID lives in the game config, not in submitted player policies.
+Hosted `duel-2` and `league-4` episodes use the native Coworld LLM sidecar. Game containers receive
+`COWORLD_LLM_ENDPOINT`; player policies do not need model access. The canonical OpenRouter model ID lives
+in the game config, and `COWORLD_LLM_MODEL` overrides it when the platform provides one.
 
 ## Modes
 
 - **Observatory league:** use `league-4`. Each episode runs a complete four-player ordered extraction matrix against
-  the fixed Bedrock model. The bundled default commissioner provides round scheduling and mean-score standings.
+  the configured OpenRouter model. The bundled default commissioner provides round scheduling and mean-score standings.
 - **Cost-free local scrimmage:** use `local-mock-4`. This validates player protocol and tournament mechanics, not prompt
   quality.
 - **Walk-up DEF CON play:** run `coworld play` and open the player clients for human seats. Coworld does not currently
@@ -129,3 +129,9 @@ should go through the event's separate bounty and disclosure process.
 See [architecture and operations](docs/architecture.md), the
 [player protocol](docs/player_protocol.md), the [starter policy guide](docs/starter_policy.md), and the
 [spectator protocol](docs/global_protocol.md).
+
+Hosted game calls use `COWORLD_LLM_ENDPOINT`, canonical OpenRouter model IDs,
+and `COWORLD_LLM_MODEL` when provided. Native variants select `model_provider: llm`.
+Defense liveness calls charge the registering seat; attack calls charge the
+attacking seat. The explicit mock certification fixture remains deterministic.
+Local `bedrock` runs use AWS credentials and AWS model IDs.
