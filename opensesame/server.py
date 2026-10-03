@@ -43,7 +43,7 @@ class Runtime:
         config: GameConfig,
         *,
         model: TextModel | None = None,
-        teacher_policy: str | None = None,
+        teacher_policies: dict[int, str] | None = None,
     ) -> None:
         self.config = config
         self.model = (
@@ -73,7 +73,7 @@ class Runtime:
         self._request_counter = 0
         self._model_semaphore = asyncio.Semaphore(config.model_concurrency)
         self.training = (
-            Training(self.seed, teacher_policy=teacher_policy)
+            Training(self.seed, teacher_policies=teacher_policies)
             if "COWORLD_PRIVATE_TRAINING_DIR" in os.environ or "COGAME_SAVE_TRAJECTORY_URI" in os.environ
             else None
         )

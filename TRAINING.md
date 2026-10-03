@@ -36,7 +36,8 @@ uv run python -m opensesame.export_teacher --variant duel-2 --games 10 --output 
 ```
 
 The exporter explicitly uses the deterministic mock environment and alternates
-the shipped starter/leaky policies. These labels verify the production engine,
+the shipped starter/leaky policies. Select `scripted-starter` targets; retain
+`scripted-leaky` opponent evidence without using it as learner labels. These labels verify the production engine,
 prompt/parser, and episode export. They do not measure prompt quality against
 the production defender or establish saved-model strength. Qualify JSONL with
 the Coworld training consumer, split by `open-sesame-<seed>` across variants,

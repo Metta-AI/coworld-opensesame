@@ -78,7 +78,7 @@ class EpisodeRecord(BaseModel):
 
 
 class Training:
-    def __init__(self, seed: int, *, teacher_policy: str | None = None) -> None:
+    def __init__(self, seed: int, *, teacher_policies: dict[int, str] | None = None) -> None:
         self.episode_id = os.environ["COWORLD_EPISODE_ID"]
         self.game_version = os.environ["COWORLD_GAME_VERSION"]
         self.source_revision = os.environ["COWORLD_SOURCE_REVISION"]
@@ -86,7 +86,7 @@ class Training:
             raise ValueError("private training requires episode, game version, and full source commit pins")
         self.image_digest = os.environ.get("COWORLD_GAME_IMAGE_DIGEST")
         self.seed_family = f"open-sesame-{seed}"
-        self.teacher_policy = teacher_policy
+        self.teacher_policies = teacher_policies
         self.captures: dict[str, Capture] = {}
         self.finished = False
 
@@ -118,10 +118,10 @@ class Training:
         capture.fallback_origin = fallback
         if response is None:
             return
-        if self.teacher_policy is not None:
+        if self.teacher_policies is not None:
             text = json.dumps(executed, separators=(",", ":"))
             attempt = Attempt(
-                policy=self.teacher_policy,
+                policy=self.teacher_policies[capture.seat],
                 origin="teacher",
                 inference_mode="text_action",
                 prompt=learner_prompt(capture.observation),

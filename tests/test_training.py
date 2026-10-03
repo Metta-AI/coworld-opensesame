@@ -125,7 +125,9 @@ def pins(monkeypatch, path: Path):
 @pytest.mark.asyncio
 async def test_whole_teacher_episode_private_artifact_and_public_redaction(tmp_path, monkeypatch):
     pins(monkeypatch, tmp_path / "private")
-    runtime = TeacherRuntime(certification_config(), model=MockModel(), teacher_policy="scripted-starter-leaky")
+    runtime = TeacherRuntime(
+        certification_config(), model=MockModel(), teacher_policies={0: "scripted-starter", 1: "scripted-leaky"}
+    )
     await runtime.run_episode()
     path = tmp_path / "private" / "decisions.jsonl"
     records = [json.loads(line) for line in path.read_text().splitlines()]
@@ -219,7 +221,9 @@ async def test_hosted_trajectory_uri_activates_capture_and_private_mode(tmp_path
     monkeypatch.setenv("COWORLD_EPISODE_ID", "unit-hosted")
     monkeypatch.setenv("COWORLD_GAME_VERSION", "unit-version")
     monkeypatch.setenv("COWORLD_SOURCE_REVISION", "d" * 40)
-    runtime = TeacherRuntime(certification_config(), model=MockModel(), teacher_policy="scripted-starter-leaky")
+    runtime = TeacherRuntime(
+        certification_config(), model=MockModel(), teacher_policies={0: "scripted-starter", 1: "scripted-leaky"}
+    )
     await runtime.run_episode()
     path = tmp_path / "hosted.jsonl"
     assert path.stat().st_mode & 0o777 == 0o600

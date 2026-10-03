@@ -49,7 +49,13 @@ async def export(variant: str, output: Path, games: int, seed_start: int) -> Non
             COWORLD_GAME_VERSION=f"source-{source}-mock",
             COWORLD_PRIVATE_TRAINING_DIR=str(output / str(seed)),
         )
-        runtime = TeacherRuntime(cfg, model=MockModel(), teacher_policy="scripted-starter-leaky")
+        runtime = TeacherRuntime(
+            cfg,
+            model=MockModel(),
+            teacher_policies={
+                seat: "scripted-starter" if seat % 2 == 0 else "scripted-leaky" for seat in range(len(cfg.tokens))
+            },
+        )
         await runtime.run_episode()
 
 
