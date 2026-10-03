@@ -124,41 +124,40 @@ class NativeModel:
         try:
             if on_attempt is not None:
                 await on_attempt(attempt)
-            async with asyncio.timeout(self.timeout_seconds):
-                async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
-                    async with client.stream(
-                        "POST",
-                        self.url,
-                        json=body,
-                        headers={
-                            "anthropic-version": "2023-06-01",
-                            "X-Coworld-Player-Slot": str(slot),
-                        },
-                    ) as response:
-                        headers = dict(response.headers)
-                        attempt.response_headers = headers
-                        if "x-softmax-llm-call-id" in headers:
-                            attempt.platform_call_id = UUID(headers["x-softmax-llm-call-id"])
-                        attempt.provider_request_id = headers.get("request-id")
-                        attempt.model_identity = headers.get("x-coworld-checkpoint-sha256")
-                        attempt.tokenizer_identity = headers.get("x-coworld-tokenizer-sha256")
-                        attempt.chat_template_sha256 = headers.get("x-coworld-chat-template-sha256")
-                        if on_attempt is not None:
-                            await on_attempt(attempt)
-                        attempt.raw_response = (await response.aread()).decode()
-                        response.raise_for_status()
-                        parsed = Response.model_validate_json(attempt.raw_response)
-                        attempt.model = parsed.model
-                        attempt.response = "".join(block.text for block in parsed.content if block.type == "text")
-                        attempt.stop_reason = parsed.stop_reason
-                        attempt.input_tokens = parsed.usage.input_tokens
-                        attempt.output_tokens = parsed.usage.output_tokens
-                        if parsed.sampling_evidence is not None:
-                            attempt.prompt_token_ids = parsed.sampling_evidence.prompt_token_ids
-                            attempt.sampled_token_ids = parsed.sampling_evidence.completion_token_ids
-                            attempt.behavior_logprobs = parsed.sampling_evidence.behavior_log_probs
-                            attempt.stop_reason = parsed.sampling_evidence.stop_reason
-                        return attempt.response
+            async with (
+                asyncio.timeout(self.timeout_seconds),
+                httpx.AsyncClient(timeout=self.timeout_seconds) as client,
+                client.stream(
+                    "POST",
+                    self.url,
+                    json=body,
+                    headers={"anthropic-version": "2023-06-01", "X-Coworld-Player-Slot": str(slot)},
+                ) as response,
+            ):
+                headers = dict(response.headers)
+                attempt.response_headers = headers
+                if "x-softmax-llm-call-id" in headers:
+                    attempt.platform_call_id = UUID(headers["x-softmax-llm-call-id"])
+                attempt.provider_request_id = headers.get("request-id")
+                attempt.model_identity = headers.get("x-coworld-checkpoint-sha256")
+                attempt.tokenizer_identity = headers.get("x-coworld-tokenizer-sha256")
+                attempt.chat_template_sha256 = headers.get("x-coworld-chat-template-sha256")
+                if on_attempt is not None:
+                    await on_attempt(attempt)
+                attempt.raw_response = (await response.aread()).decode()
+                response.raise_for_status()
+                parsed = Response.model_validate_json(attempt.raw_response)
+                attempt.model = parsed.model
+                attempt.response = "".join(block.text for block in parsed.content if block.type == "text")
+                attempt.stop_reason = parsed.stop_reason
+                attempt.input_tokens = parsed.usage.input_tokens
+                attempt.output_tokens = parsed.usage.output_tokens
+                if parsed.sampling_evidence is not None:
+                    attempt.prompt_token_ids = parsed.sampling_evidence.prompt_token_ids
+                    attempt.sampled_token_ids = parsed.sampling_evidence.completion_token_ids
+                    attempt.behavior_logprobs = parsed.sampling_evidence.behavior_log_probs
+                    attempt.stop_reason = parsed.sampling_evidence.stop_reason
+                return attempt.response
         finally:
             attempt.latency_ms = (time.monotonic() - started) * 1000
             if on_attempt is not None:
