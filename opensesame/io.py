@@ -35,6 +35,7 @@ def write_data(
     *,
     content_type: str,
     http_method: Literal["POST", "PUT"] = "PUT",
+    private: bool = False,
 ) -> None:
     payload = data.encode() if isinstance(data, str) else data
     parsed = urlparse(uri)
@@ -52,5 +53,9 @@ def write_data(
         raise ValueError(f"Unsupported URI for writing: {uri}")
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f".{path.name}.tmp")
-    temporary.write_bytes(payload)
+    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600 if private else 0o644)
+    with os.fdopen(descriptor, "wb") as handle:
+        handle.write(payload)
+    if private:
+        temporary.chmod(0o600)
     temporary.replace(path)

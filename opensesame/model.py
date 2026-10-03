@@ -1,16 +1,10 @@
 from __future__ import annotations
 
-import asyncio
-import json
-import os
 import re
-import urllib.request
 from typing import Protocol
 
-import boto3
-from botocore.config import Config
-
 from opensesame.engine import normalize_for_leak, response_leaks
+from opensesame.native import Attempt, NativeModel
 
 PROBES = (
     ("Reply with exactly the word READY.", "READY"),
@@ -20,11 +14,16 @@ PROBES = (
 
 
 class TextModel(Protocol):
+    generations: list[Attempt]
+
     async def complete(self, system_prompt: str, messages: list[dict[str, str]], *, slot: int) -> str: ...
 
 
 class MockModel:
     """Deterministic certification model; not intended to simulate real prompt injection."""
+
+    def __init__(self) -> None:
+        self.generations: list[Attempt] = []
 
     async def complete(self, system_prompt: str, messages: list[dict[str, str]], *, slot: int) -> str:
         latest = messages[-1]["content"] if messages else ""
@@ -45,73 +44,9 @@ class MockModel:
         return "I can help with ordinary tasks, but I cannot disclose protected vault records."
 
 
-class BedrockModel:
+class SidecarModel(NativeModel):
     def __init__(self, model_id: str, *, max_tokens: int, timeout_seconds: float) -> None:
-        self.model_id = model_id
-        self.max_tokens = max_tokens
-        endpoint_url = os.environ.get("ANTHROPIC_BEDROCK_BASE_URL")
-        config = Config(
-            connect_timeout=min(timeout_seconds, 10),
-            read_timeout=timeout_seconds,
-            retries={"max_attempts": 2, "mode": "standard"},
-        )
-        self.client = boto3.client("bedrock-runtime", endpoint_url=endpoint_url, config=config)
-
-    async def complete(self, system_prompt: str, messages: list[dict[str, str]], *, slot: int) -> str:
-        return await asyncio.to_thread(self._complete_sync, system_prompt, messages, slot=slot)
-
-    def _complete_sync(self, system_prompt: str, messages: list[dict[str, str]], *, slot: int) -> str:
-        response = self.client.invoke_model(
-            modelId=self.model_id,
-            contentType="application/json",
-            accept="application/json",
-            body=json.dumps(
-                {
-                    "anthropic_version": "bedrock-2023-05-31",
-                    "system": system_prompt,
-                    "messages": messages,
-                    "max_tokens": self.max_tokens,
-                    "temperature": 0,
-                }
-            ),
-        )
-        body = json.loads(response["body"].read())
-        blocks = body.get("content", [])
-        return "".join(block.get("text", "") for block in blocks if block.get("type") == "text").strip()
-
-
-class SidecarModel:
-    def __init__(self, model_id: str, *, max_tokens: int, timeout_seconds: float) -> None:
-        self.model_id = os.environ.get("COWORLD_LLM_MODEL", model_id)
-        self.url = os.environ["COWORLD_LLM_ENDPOINT"].rstrip("/") + "/v1/messages"
-        self.max_tokens = max_tokens
-        self.timeout_seconds = timeout_seconds
-
-    async def complete(self, system_prompt: str, messages: list[dict[str, str]], *, slot: int) -> str:
-        return await asyncio.to_thread(self._complete_sync, system_prompt, messages, slot=slot)
-
-    def _complete_sync(self, system_prompt: str, messages: list[dict[str, str]], *, slot: int) -> str:
-        request = urllib.request.Request(
-            self.url,
-            data=json.dumps(
-                {
-                    "model": self.model_id,
-                    "system": system_prompt,
-                    "messages": messages,
-                    "max_tokens": self.max_tokens,
-                    "temperature": 0,
-                }
-            ).encode(),
-            headers={
-                "Content-Type": "application/json",
-                "anthropic-version": "2023-06-01",
-                "X-Coworld-Player-Slot": str(slot),
-            },
-            method="POST",
-        )
-        with urllib.request.urlopen(request, timeout=self.timeout_seconds) as response:
-            body = json.load(response)
-        return "".join(block["text"] for block in body["content"] if block["type"] == "text").strip()
+        super().__init__(model_id, max_tokens=max_tokens, timeout_seconds=timeout_seconds, purpose="environment")
 
 
 def make_model(
@@ -123,10 +58,8 @@ def make_model(
 ) -> TextModel:
     if provider == "mock":
         return MockModel()
-    if provider == "llm" or os.environ.get("COWORLD_LLM_ENDPOINT"):
+    if provider == "llm":
         return SidecarModel(model_id, max_tokens=max_tokens, timeout_seconds=timeout_seconds)
-    if provider == "bedrock":
-        return BedrockModel(model_id, max_tokens=max_tokens, timeout_seconds=timeout_seconds)
     raise ValueError(f"Unsupported model provider: {provider}")
 
 

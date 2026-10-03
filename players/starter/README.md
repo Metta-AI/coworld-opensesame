@@ -27,7 +27,7 @@ uv run coworld upload-policy open-sesame-starter \
   --run python --run -m --run opensesame.player
 ```
 
-The policy does not call an LLM, so it does not need `--use-bedrock`.
+The policy does not call an LLM, so it needs no learner inference configuration.
 
 ## Where to improve it
 
