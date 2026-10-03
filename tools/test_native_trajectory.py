@@ -144,7 +144,7 @@ try:
             "seed": 17,
             "model_provider": config["model_provider"],
             "player_connect_timeout_seconds": 5,
-            "action_timeout_seconds": 0.1 if flow == "silence" else 1,
+            "action_timeout_seconds": 1,
             "model_timeout_seconds": 1,
             "minimum_episode_seconds": 0,
             "tokens": ["owned-native-" + str(i) for i in range(len(config["players"]))],
