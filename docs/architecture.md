@@ -24,7 +24,7 @@ The episode also has bounded player connect, player action, and model-call waits
 ## Determinism
 
 With a pinned seed and the `mock` provider, passphrases, pair order, events, results, and replay are deterministic for
-identical player actions. With Bedrock, the game requests temperature zero, but infrastructure-level model variation is
+identical player actions. With the native sidecar, the game requests temperature zero, but infrastructure-level model variation is
 still possible. The extraction outcome remains a deterministic function of the returned text.
 
 An absent seed is replaced with 63 random bits and the concrete seed is recorded in results and replay. Tokens and
@@ -41,8 +41,8 @@ defense from donating points and keeps one broken container from hanging the tab
 
 ## Model access
 
-`model_provider: bedrock` uses Bedrock `InvokeModel` with the Anthropic Messages payload, temperature zero, bounded
-timeouts, and retries. The model ID comes from the game config. Submitted policies do not bring model credentials and
+`model_provider: llm` uses the Coworld native Messages sidecar with temperature zero, top-p one, and bounded
+timeouts. The model ID comes from the game config. Submitted policies do not bring model credentials and
 cannot select the competition model.
 
 `model_provider: mock` is a deterministic protocol/certification adapter. It recognizes the two bundled canary
@@ -63,7 +63,7 @@ Before opening the prize league:
 
 1. Pin the repository source URLs and image digests to the reviewed release commit.
 2. Freeze the model ID, liveness probes, prompt/message/token caps, turns, and scoring in a published rules version.
-3. Run seeded mock certification, then a hosted Bedrock experience run; inspect results, logs, and the browser replay.
+3. Run seeded mock certification, then a hosted native-sidecar experience run; inspect results, logs, and the browser replay.
 4. Playtest naive extraction rates. Target enough variance to avoid both universal leaks and universal stalemates.
 5. Set league episode spend limits above the 48-call four-seat ceiling with margin for liveness probes.
 6. Publish Rules of Engagement and the separate runner/harness disclosure path.

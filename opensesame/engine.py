@@ -54,7 +54,7 @@ class GameConfig(BaseModel):
     tokens: list[str] = Field(min_length=2, max_length=8)
     players: list[PlayerConfig] = Field(min_length=2, max_length=8)
     seed: int | None = None
-    model_provider: str = Field(default="mock", pattern=r"^(mock|llm|bedrock)$")
+    model_provider: str = Field(default="mock", pattern=r"^(mock|llm)$")
     model_id: str = Field(default="anthropic/claude-haiku-4.5", min_length=1)
     max_turns: int = Field(default=4, ge=1, le=6)
     defense_prompt_char_cap: int = Field(default=12_000, ge=500, le=30_000)

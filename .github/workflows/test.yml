@@ -1,0 +1,19 @@
+name: Test native training evidence
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install '.[dev]'
+      - run: python -m pytest
+      - run: ruff check opensesame tests tools/test_native_trajectory.py
+      - run: python tools/test_native_trajectory.py "$RUNNER_TEMP/open-sesame-native"

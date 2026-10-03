@@ -61,7 +61,14 @@ async def test_native_sidecar_model_and_acting_seat(monkeypatch) -> None:
         def do_POST(self):
             body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
             requests.append((self.path, dict(self.headers), body))
-            response = json.dumps({"content": [{"type": "text", "text": "native reply"}]}).encode()
+            response = json.dumps(
+                {
+                    "content": [{"type": "text", "text": "native reply"}],
+                    "model": "anthropic/frozen-defender",
+                    "usage": {"input_tokens": 4, "output_tokens": 2},
+                    "stop_reason": "end_turn",
+                }
+            ).encode()
             self.send_response(200)
             self.send_header("Content-Length", str(len(response)))
             self.end_headers()
@@ -77,7 +84,7 @@ async def test_native_sidecar_model_and_acting_seat(monkeypatch) -> None:
     monkeypatch.setenv("COWORLD_LLM_MODEL", "anthropic/claude-sonnet-4.6")
     monkeypatch.setenv("AWS_ENDPOINT_URL_BEDROCK_RUNTIME", "http://retired.invalid")
     try:
-        model = make_model("llm", "retired-model", max_tokens=64, timeout_seconds=3)
+        model = make_model("llm", "anthropic/frozen-defender", max_tokens=64, timeout_seconds=3)
         assert await model.complete("rules", [{"role": "user", "content": "attack"}], slot=1) == "native reply"
         assert isinstance(make_model("mock", "offline", max_tokens=64, timeout_seconds=3), MockModel)
     finally:
@@ -86,7 +93,7 @@ async def test_native_sidecar_model_and_acting_seat(monkeypatch) -> None:
         thread.join()
     path, headers, body = requests[0]
     assert path == "/v1/messages"
-    assert body["model"] == "anthropic/claude-sonnet-4.6"
+    assert body["model"] == "anthropic/frozen-defender"
     assert headers["X-Coworld-Player-Slot"] == "1"
     assert "anthropic_version" not in body
     assert "Authorization" not in headers

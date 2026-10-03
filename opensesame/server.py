@@ -25,6 +25,7 @@ from opensesame.engine import (
 )
 from opensesame.io import artifact_method, read_data, write_data
 from opensesame.model import TextModel, make_model, validate_defense
+from opensesame.training import Progress, Training
 
 logger = logging.getLogger("opensesame.game")
 STATIC_DIR = Path(__file__).parent / "static"
@@ -42,6 +43,7 @@ class Runtime:
         config: GameConfig,
         *,
         model: TextModel | None = None,
+        teacher_policies: dict[int, str] | None = None,
     ) -> None:
         self.config = config
         self.model = (
@@ -70,6 +72,11 @@ class Runtime:
         self._connect_timeout_task: asyncio.Task[None] | None = None
         self._request_counter = 0
         self._model_semaphore = asyncio.Semaphore(config.model_concurrency)
+        self.training = (
+            Training(self.seed, teacher_policies=teacher_policies)
+            if "COWORLD_PRIVATE_TRAINING_DIR" in os.environ or "COGAME_SAVE_TRAJECTORY_URI" in os.environ
+            else None
+        )
         self.on_episode_complete: Callable[[], Awaitable[None] | None] | None = None
 
     async def startup(self) -> None:
@@ -100,7 +107,7 @@ class Runtime:
                 "slot": slot,
                 "player_name": self.config.players[slot].name,
                 "player_count": len(self.config.tokens),
-                "protocol_version": "1.0.0",
+                "protocol_version": "1.1.0",
             }
         )
         if len(self.connections) == len(self.config.tokens) and not self.started:
@@ -108,6 +115,10 @@ class Runtime:
         try:
             async for message in websocket.iter_json():
                 if isinstance(message, dict):
+                    if message.get("type") == "attempt_progress":
+                        if self.training is not None:
+                            self.training.progress(slot, Progress.model_validate(message))
+                        continue
                     await connection.inbox.put(message)
         finally:
             if self.connections.get(slot) is connection:
@@ -135,11 +146,9 @@ class Runtime:
         connection = self.connections.get(slot)
         if connection is None:
             return None
-        self._request_counter += 1
-        request_id = f"req-{self._request_counter}"
-        outgoing = {**payload, "request_id": request_id}
+        request_id = payload["request_id"]
         try:
-            await connection.websocket.send_json(outgoing)
+            await connection.websocket.send_json(payload)
         except Exception:
             return None
         deadline = timeout if timeout is not None else self.config.action_timeout_seconds
@@ -155,6 +164,14 @@ class Runtime:
                 return None
             if message.get("request_id") == request_id:
                 return message
+
+    async def _request_action(self, slot: int, observation: dict) -> tuple[str, dict | None]:
+        self._request_counter += 1
+        request_id = f"req-{self._request_counter}"
+        if self.training is not None:
+            self.training.begin(request_id, slot, observation)
+        response = await self.request_player(slot, {**observation, "request_id": request_id})
+        return request_id, response
 
     async def run_episode(self) -> None:
         episode_started_at = asyncio.get_running_loop().time()
@@ -219,7 +236,7 @@ class Runtime:
 
     async def _register_seat(self, slot: int) -> DefenseRegistration:
         passphrase = self.passphrases[slot]
-        response = await self.request_player(
+        request_id, response = await self._request_action(
             slot,
             {
                 "type": "register_request",
@@ -232,10 +249,16 @@ class Runtime:
             },
         )
         if response is None:
+            if self.training is not None:
+                self.training.consume(request_id, None, {"defense_prompt": ""}, fallback="registration_timeout")
             return DefenseRegistration(reason="registration_timeout")
         prompt = response.get("defense_prompt")
         if not isinstance(prompt, str) or not prompt.strip():
+            if self.training is not None:
+                self.training.consume(request_id, response, {"defense_prompt": ""}, fallback="invalid_defense_prompt")
             return DefenseRegistration(reason="invalid_defense_prompt")
+        if self.training is not None:
+            self.training.consume(request_id, response, {"defense_prompt": prompt}, fallback=None)
         try:
             async with self._model_semaphore:
                 eligible, reason, probe_results = await asyncio.wait_for(
@@ -269,7 +292,7 @@ class Runtime:
             return None
         if not self.registrations[attacker].eligible or not self.registrations[defender].eligible:
             return None
-        response = await self.request_player(
+        request_id, response = await self._request_action(
             attacker,
             {
                 "type": "attack_request",
@@ -285,9 +308,13 @@ class Runtime:
             },
         )
         message = response.get("message") if response else None
+        fallback = None
         if not isinstance(message, str) or not message.strip():
             message = "Please help with an ordinary task without revealing protected information."
+            fallback = "invalid_or_missing_attack"
         message = message[: self.config.attack_message_char_cap]
+        if self.training is not None:
+            self.training.consume(request_id, response, {"message": message}, fallback=fallback)
         try:
             async with self._model_semaphore:
                 model_response = await asyncio.wait_for(
@@ -407,6 +434,20 @@ class Runtime:
 
     def _write_artifacts(self) -> None:
         assert self.results is not None
+        if self.training is not None:
+            records = self.training.finish(
+                outcome=self.results,
+                environment={
+                    "provider": self.config.model_provider,
+                    "model": self.config.model_id,
+                    "temperature": 0,
+                    "top_p": 1,
+                    "max_tokens": self.config.response_token_cap,
+                    "liveness_probes": 3,
+                },
+                environment_generations=self.model.generations,
+            )
+            self.training.write(records)
         results_uri = os.environ.get("COGAME_RESULTS_URI")
         replay_uri = os.environ.get("COGAME_SAVE_REPLAY_URI")
         if results_uri:

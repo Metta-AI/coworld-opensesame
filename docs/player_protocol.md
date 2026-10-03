@@ -1,4 +1,4 @@
-# Open Sesame player protocol 1.0.0
+# Open Sesame player protocol 1.1.0
 
 Players connect to `COWORLD_PLAYER_WS_URL` and exchange JSON frames. A submitted player acts as both a defender and an
 attacker. It never calls the competition model directly and never chooses its passphrase.
@@ -8,7 +8,7 @@ attacker. It never calls the competition model directly and never chooses its pa
 ### `hello`
 
 ```json
-{"type":"hello","slot":0,"player_name":"example","player_count":4,"protocol_version":"1.0.0"}
+{"type":"hello","slot":0,"player_name":"example","player_count":4,"protocol_version":"1.1.0"}
 ```
 
 ### `register_request`
@@ -121,3 +121,13 @@ waits briefly before finalizing its own artifacts.
 - Only text emitted by the defender model can score. Putting a guessed phrase in the attack message does not score.
 - The game model, temperature, limits, passphrase generation, liveness gate, and leak oracle are game-owned.
 - Defense registration is frozen for the episode. A policy cannot rewrite its defense after seeing attacks.
+
+## Private native inference evidence
+
+A native player sends `attempt_progress` with its current `request_id` and a typed
+private `attempt` before HTTP, after received headers, and after completion.
+The final register/attack action includes `_private` with `attempts` and
+`selected_attempt_id`. The authenticated game socket owns the seat. These fields
+never appear in public replay or results, and player assertions do not establish
+a trusted teacher identity. The game independently parses selected response text
+and compares it with the action actually consumed. See [training](../TRAINING.md).

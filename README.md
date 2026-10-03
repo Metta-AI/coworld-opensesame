@@ -131,7 +131,8 @@ See [architecture and operations](docs/architecture.md), the
 [spectator protocol](docs/global_protocol.md).
 
 Hosted game calls use `COWORLD_LLM_ENDPOINT`, canonical OpenRouter model IDs,
-and `COWORLD_LLM_MODEL` when provided. Native variants select `model_provider: llm`.
+selected by the game config. Learner checkpoint overrides never select the frozen defender.
+Native variants select `model_provider: llm`.
 Defense liveness calls charge the registering seat; attack calls charge the
 attacking seat. The explicit mock certification fixture remains deterministic.
-Local `bedrock` runs use AWS credentials and AWS model IDs.
+Local native runs require `COWORLD_LLM_ENDPOINT`; mock runs make no model calls.

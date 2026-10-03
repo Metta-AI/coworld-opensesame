@@ -8,6 +8,7 @@ from typing import Any
 
 import websockets
 
+from opensesame.native import Attempt, NativeModel, learner_prompt, parse_action
 from opensesame.starter import legacy_attack, legacy_defense_prompt, starter_attack, starter_defense_prompt
 
 logger = logging.getLogger("opensesame.player")
@@ -37,11 +38,60 @@ def attack_message(turn: int, profile: str, transcript: list[dict[str, str]]) ->
 async def run() -> None:
     ws_url = os.environ["COWORLD_PLAYER_WS_URL"]
     profile = os.environ.get("OPEN_SESAME_PROFILE", "starter")
+    native = (
+        NativeModel(
+            "anthropic/claude-haiku-4.5",
+            max_tokens=2048,
+            timeout_seconds=float(os.environ.get("OPEN_SESAME_LEARNER_TIMEOUT_SECONDS", "20")),
+            purpose="learner",
+        )
+        if profile == "native"
+        else None
+    )
     logger.info("connecting profile=%s", profile)
+    slot = -1
     async with websockets.connect(ws_url, max_size=2**20) as websocket:
         async for raw in websocket:
             message: dict[str, Any] = json.loads(raw)
             message_type = message.get("type")
+            if message_type == "hello":
+                slot = int(message["slot"])
+                continue
+            if message_type in {"register_request", "attack_request"} and native is not None:
+                observation = {key: value for key, value in message.items() if key != "request_id"}
+                prompt = learner_prompt(observation)
+
+                async def progress(attempt: Attempt, request_id: str = message["request_id"]) -> None:
+                    await websocket.send(
+                        json.dumps(
+                            {
+                                "type": "attempt_progress",
+                                "request_id": request_id,
+                                "attempt": attempt.model_dump(mode="json"),
+                            }
+                        )
+                    )
+
+                if slot < 0:
+                    raise ValueError("native learner requires authenticated seat handshake")
+                raw_reply = await native.complete(prompt[0]["content"], prompt[1:], slot=slot, on_attempt=progress)
+                action = parse_action(raw_reply, observation)
+                attempt = native.generations[-1]
+                attempt.parsed_action = action
+                await websocket.send(
+                    json.dumps(
+                        {
+                            "type": "register" if message_type == "register_request" else "attack",
+                            "request_id": message["request_id"],
+                            **action,
+                            "_private": {
+                                "attempts": [attempt.model_dump(mode="json")],
+                                "selected_attempt_id": attempt.attempt_id,
+                            },
+                        }
+                    )
+                )
+                continue
             if message_type == "register_request":
                 await websocket.send(
                     json.dumps(
