@@ -6,8 +6,8 @@ import logging
 import os
 import secrets
 from collections.abc import Awaitable, Callable
-from contextlib import asynccontextmanager, suppress
-from dataclasses import dataclass, field
+from contextlib import asynccontextmanager, contextmanager, suppress
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -23,9 +23,20 @@ from opensesame.engine import (
     generate_passphrases,
     redact_passphrase,
 )
-from opensesame.io import artifact_method, read_data, write_data
+from opensesame.io import read_data, write_data
+from opensesame.lifecycle import (
+    CLEANUP_SECONDS,
+    bounded,
+    main_owned,
+    owned_children,
+    owned_task,
+    settle,
+    shutdown_deadline,
+)
 from opensesame.model import TextModel, make_model, validate_defense
-from opensesame.training import Progress, Training
+from opensesame.native import NativeModel
+from opensesame.protocol import EvidenceReceived, Stop, Stopped
+from opensesame.training import DecisionAdmission, Progress, Training
 
 logger = logging.getLogger("opensesame.game")
 STATIC_DIR = Path(__file__).parent / "static"
@@ -34,7 +45,12 @@ STATIC_DIR = Path(__file__).parent / "static"
 @dataclass(slots=True)
 class PlayerConnection:
     websocket: WebSocket
-    inbox: asyncio.Queue[dict[str, Any]] = field(default_factory=asyncio.Queue)
+    inbox: asyncio.Queue[dict[str, Any]] = field(default_factory=lambda: asyncio.Queue(maxsize=8))
+    connected: bool = True
+    stop_id: str | None = None
+    stop_deadline: float = 0
+    stopped: asyncio.Event = field(default_factory=asyncio.Event)
+    native_progress: dict[str, Progress] = field(default_factory=dict)
 
 
 class Runtime:
@@ -62,6 +78,11 @@ class Runtime:
         self.registrations = [DefenseRegistration() for _ in range(count)]
         self.duels = build_duels(count)
         self.connections: dict[int, PlayerConnection] = {}
+        self.registered_connections: list[tuple[int, PlayerConnection]] = []
+        self._player_readers: set[asyncio.Task] = set()
+        self.admission_closed = False
+        self.ownership_settled = False
+        self._stop_deadline: float | None = None
         self.global_viewers: set[WebSocket] = set()
         self.replay_events: list[dict[str, Any]] = []
         self.started = False
@@ -69,6 +90,8 @@ class Runtime:
         self.phase = "waiting"
         self.results: dict[str, Any] | None = None
         self._episode_task: asyncio.Task[None] | None = None
+        self._play_task: asyncio.Task[dict[str, Any]] | None = None
+        self._engine_children: set[asyncio.Task] = set()
         self._connect_timeout_task: asyncio.Task[None] | None = None
         self._request_counter = 0
         self._model_semaphore = asyncio.Semaphore(config.model_concurrency)
@@ -77,26 +100,89 @@ class Runtime:
             if "COWORLD_PRIVATE_TRAINING_DIR" in os.environ or "COGAME_SAVE_TRAJECTORY_URI" in os.environ
             else None
         )
+        self.admission = (
+            self.training if self.training is not None else DecisionAdmission(teacher_policies=teacher_policies)
+        )
+        if self.training is not None and isinstance(self.model, NativeModel):
+            self.model.observer = self.training.record_environment
         self.on_episode_complete: Callable[[], Awaitable[None] | None] | None = None
 
     async def startup(self) -> None:
         self._connect_timeout_task = asyncio.create_task(self._start_after_connect_timeout())
 
     async def shutdown(self) -> None:
-        for task in (self._connect_timeout_task, self._episode_task):
-            if task is not None and not task.done():
-                task.cancel()
-                with suppress(asyncio.CancelledError):
-                    await task
+        self.admission_closed = True
+        loop = asyncio.get_running_loop()
+        deadline = self._stop_deadline if self._stop_deadline is not None else loop.time() + CLEANUP_SECONDS
+        inherited = shutdown_deadline.get()
+        if inherited is not None and inherited[0] is not None:
+            deadline = min(deadline, inherited[0])
+        self._stop_deadline = deadline
+        stopper = asyncio.create_task(self.stop_players())
+        engine_tasks = self._engine_children | {
+            task for task in (self._connect_timeout_task, self._episode_task, self._play_task) if task is not None
+        }
+        engine_joined = await settle(engine_tasks, deadline, cancel=True)
+        stop_joined = await settle({stopper}, deadline, cancel=False)
+        if not stop_joined:
+            await settle({stopper}, deadline, cancel=True)
+        closers = {
+            asyncio.create_task(connection.websocket.close())
+            for _, connection in self.registered_connections
+            if connection.connected
+        }
+        sockets_joined = await settle(closers, deadline, cancel=False)
+        if not sockets_joined:
+            await settle(closers, deadline, cancel=True)
+        readers_joined = await settle(self._player_readers, deadline, cancel=True)
+        self.ownership_settled = (
+            engine_joined
+            and stop_joined
+            and not stopper.cancelled()
+            and stopper.exception() is None
+            and stopper.result()
+            and sockets_joined
+            and readers_joined
+        )
+        if self.training is not None and not self.training.finished:
+            if self.ownership_settled:
+                records = self.training.finish(
+                    outcome={
+                        "runtime_configuration": {**self.config.model_dump(exclude={"tokens"}), "seed": self.seed},
+                        "interrupted": True,
+                        "phase": self.phase,
+                        "engine_state": self.private_engine_state(),
+                    },
+                    environment={
+                        "provider": self.config.model_provider,
+                        "model": self.config.model_id,
+                        "temperature": 0,
+                        "top_p": 1,
+                        "max_tokens": self.config.response_token_cap,
+                    },
+                    environment_generations=self.model.generations,
+                    ownership_settled=True,
+                    completed=False,
+                )
+                self.training.write(records)
+            else:
+                self.training.retain_unsettled(self.model.generations)
 
     async def connect_player(self, slot: int, token: str, websocket: WebSocket) -> None:
         if slot < 0 or slot >= len(self.config.tokens) or token != self.config.tokens[slot]:
             await websocket.close(code=1008)
             return
+        if self.admission_closed:
+            await websocket.close(code=1008)
+            return
+        reader = asyncio.current_task()
+        assert reader is not None
+        self._player_readers.add(reader)
         await websocket.accept()
         previous = self.connections.get(slot)
         connection = PlayerConnection(websocket=websocket)
         self.connections[slot] = connection
+        self.registered_connections.append((slot, connection))
         if previous is not None:
             with suppress(Exception):
                 await previous.websocket.close(code=1012)
@@ -107,7 +193,7 @@ class Runtime:
                 "slot": slot,
                 "player_name": self.config.players[slot].name,
                 "player_count": len(self.config.tokens),
-                "protocol_version": "1.1.0",
+                "protocol_version": "2.0.0",
             }
         )
         if len(self.connections) == len(self.config.tokens) and not self.started:
@@ -115,12 +201,38 @@ class Runtime:
         try:
             async for message in websocket.iter_json():
                 if isinstance(message, dict):
-                    if message.get("type") == "attempt_progress":
-                        if self.training is not None:
-                            self.training.progress(slot, Progress.model_validate(message))
+                    if message.get("type") == "stopped":
+                        control = Stopped.model_validate(message)
+                        if (
+                            connection.stop_id is None
+                            or control.stop_id != connection.stop_id
+                            or connection.stopped.is_set()
+                            or asyncio.get_running_loop().time() > connection.stop_deadline
+                        ):
+                            raise ValueError("invalid stopped acknowledgement")
+                        if any(
+                            progress.attempt.response_reader_joined is False
+                            for progress in connection.native_progress.values()
+                        ):
+                            raise ValueError("stopped acknowledgement contradicts unresolved reader")
+                        await bounded(
+                            websocket.send_json(EvidenceReceived(stop_id=control.stop_id).model_dump()),
+                            connection.stop_deadline,
+                        )
+                        connection.stopped.set()
                         continue
-                    await connection.inbox.put(message)
+                    if connection.stopped.is_set():
+                        raise ValueError("player mutation after stopped acknowledgement")
+                    if message.get("type") == "attempt_progress":
+                        progress = Progress.model_validate(message)
+                        self.admission.progress(slot, progress)
+                        connection.native_progress[progress.attempt.attempt_id] = progress
+                        continue
+                    if not self.admission_closed:
+                        await connection.inbox.put(message)
         finally:
+            self._player_readers.discard(reader)
+            connection.connected = False
             if self.connections.get(slot) is connection:
                 del self.connections[slot]
 
@@ -168,12 +280,61 @@ class Runtime:
     async def _request_action(self, slot: int, observation: dict) -> tuple[str, dict | None]:
         self._request_counter += 1
         request_id = f"req-{self._request_counter}"
-        if self.training is not None:
-            self.training.begin(request_id, slot, observation)
+        if self.admission_closed:
+            raise asyncio.CancelledError
+        self.admission.begin(request_id, slot, observation)
         response = await self.request_player(slot, {**observation, "request_id": request_id})
         return request_id, response
 
     async def run_episode(self) -> None:
+        token = owned_children.set(self._engine_children)
+        play_task = asyncio.create_task(self._play_episode())
+        self._play_task = play_task
+        try:
+            results = await play_task
+            self.results = results
+            self.admission_closed = True
+            players_joined = await self.stop_players()
+            assert self._stop_deadline is not None
+            children_joined = await settle(self._engine_children, self._stop_deadline, cancel=False)
+            if not children_joined:
+                await settle(self._engine_children, self._stop_deadline, cancel=True)
+            self.ownership_settled = (
+                players_joined
+                and children_joined
+                and all(attempt.response_reader_joined is not False for attempt in self.model.generations)
+            )
+            self.phase = "complete" if self.ownership_settled else "truncated"
+            if not self.ownership_settled:
+                if self.training is not None:
+                    self.training.retain_unsettled(self.model.generations)
+                return
+            self._write_artifacts()
+            self.done = True
+            await self.publish({"type": "final_scores", **results})
+            await self._send_final_to_players()
+            logger.info("episode complete scores=%s", results["scores"])
+            if self.on_episode_complete is not None:
+                outcome = self.on_episode_complete()
+                if outcome is not None:
+                    await outcome
+        finally:
+            deadline = (
+                self._stop_deadline
+                if self._stop_deadline is not None
+                else asyncio.get_running_loop().time() + CLEANUP_SECONDS
+            )
+            inherited = shutdown_deadline.get()
+            if inherited is not None and inherited[0] is not None:
+                deadline = min(deadline, inherited[0])
+            self.admission_closed = True
+            if not await settle(self._engine_children | {play_task}, deadline, cancel=True):
+                self.ownership_settled = False
+            if not self.ownership_settled and self.training is not None and not self.training.finished:
+                self.training.retain_unsettled(self.model.generations)
+            owned_children.reset(token)
+
+    async def _play_episode(self) -> dict[str, Any]:
         episode_started_at = asyncio.get_running_loop().time()
         self.phase = "registration"
         await self.publish({"type": "phase", "phase": self.phase})
@@ -195,6 +356,8 @@ class Runtime:
         player_count = len(self.config.tokens)
         for offset in range(1, player_count):
             for turn in range(1, self.config.max_turns + 1):
+                if self.admission_closed:
+                    raise asyncio.CancelledError
                 turn_events = await asyncio.gather(
                     *(
                         self._run_duel_turn(
@@ -210,8 +373,7 @@ class Runtime:
                     if event is not None:
                         await self.publish(event, live_payloads=False)
 
-        self.phase = "complete"
-        self.results = compute_results(
+        results = compute_results(
             self.registrations,
             self.duels,
             [player.name for player in self.config.players],
@@ -223,16 +385,41 @@ class Runtime:
         )
         if remaining_minimum > 0:
             await asyncio.sleep(remaining_minimum)
-        await self.publish({"type": "final_scores", **self.results})
-        await self._send_final_to_players()
-        await asyncio.sleep(0.25)
-        self._write_artifacts()
-        self.done = True
-        logger.info("episode complete scores=%s", self.results["scores"])
-        if self.on_episode_complete is not None:
-            outcome = self.on_episode_complete()
-            if outcome is not None:
-                await outcome
+        return results
+
+    async def stop_players(self) -> bool:
+        self.admission_closed = True
+        loop = asyncio.get_running_loop()
+        if self._stop_deadline is None:
+            self._stop_deadline = loop.time() + CLEANUP_SECONDS
+            inherited = shutdown_deadline.get()
+            if inherited is not None and inherited[0] is not None:
+                self._stop_deadline = min(self._stop_deadline, inherited[0])
+        deadline = self._stop_deadline
+        senders = set()
+        for _, connection in self.registered_connections:
+            if connection.stop_id is None:
+                connection.stop_id = secrets.token_hex(16)
+                connection.stop_deadline = deadline
+                if connection.connected:
+                    senders.add(
+                        asyncio.create_task(
+                            connection.websocket.send_json(Stop(stop_id=connection.stop_id).model_dump())
+                        )
+                    )
+        senders_joined = await settle(senders, deadline, cancel=False)
+        if not senders_joined:
+            await settle(senders, deadline, cancel=True)
+            return False
+        if any(not sender.cancelled() and sender.exception() is not None for sender in senders):
+            return False
+        acknowledgements = {
+            asyncio.create_task(connection.stopped.wait()) for _, connection in self.registered_connections
+        }
+        acknowledged = await settle(acknowledgements, deadline, cancel=False)
+        if not acknowledged:
+            await settle(acknowledgements, deadline, cancel=True)
+        return acknowledged and all(connection.stopped.is_set() for _, connection in self.registered_connections)
 
     async def _register_seat(self, slot: int) -> DefenseRegistration:
         passphrase = self.passphrases[slot]
@@ -249,16 +436,15 @@ class Runtime:
             },
         )
         if response is None:
-            if self.training is not None:
-                self.training.consume(request_id, None, {"defense_prompt": ""}, fallback="registration_timeout")
+            self.admission.consume(request_id, None, {"defense_prompt": ""}, fallback="registration_timeout")
             return DefenseRegistration(reason="registration_timeout")
         prompt = response.get("defense_prompt")
         if not isinstance(prompt, str) or not prompt.strip():
-            if self.training is not None:
-                self.training.consume(request_id, response, {"defense_prompt": ""}, fallback="invalid_defense_prompt")
+            self.admission.consume(request_id, response, {"defense_prompt": ""}, fallback="invalid_defense_prompt")
             return DefenseRegistration(reason="invalid_defense_prompt")
-        if self.training is not None:
-            self.training.consume(request_id, response, {"defense_prompt": prompt}, fallback=None)
+        if not self.admission.consume(request_id, response, {"defense_prompt": prompt}, fallback=None):
+            self.admission.consume(request_id, None, {"defense_prompt": ""}, fallback="native-evidence-mismatch")
+            return DefenseRegistration(reason="native-evidence-mismatch")
         try:
             async with self._model_semaphore:
                 eligible, reason, probe_results = await asyncio.wait_for(
@@ -313,8 +499,9 @@ class Runtime:
             message = "Please help with an ordinary task without revealing protected information."
             fallback = "invalid_or_missing_attack"
         message = message[: self.config.attack_message_char_cap]
-        if self.training is not None:
-            self.training.consume(request_id, response, {"message": message}, fallback=fallback)
+        if not self.admission.consume(request_id, response, {"message": message}, fallback=fallback):
+            message = "Please help with an ordinary task without revealing protected information."
+            self.admission.consume(request_id, None, {"message": message}, fallback="native-evidence-mismatch")
         try:
             async with self._model_semaphore:
                 model_response = await asyncio.wait_for(
@@ -336,8 +523,11 @@ class Runtime:
             model_response = "[MODEL UNAVAILABLE — ATTEMPT RECORDED]"
 
         leaked = duel.record(message, model_response, self.passphrases[defender])
-        safe_attack = redact_passphrase(message, self.passphrases[defender])
-        safe_response = redact_passphrase(model_response, self.passphrases[defender])
+        safe_attack = message
+        safe_response = model_response
+        for phrase in self.passphrases:
+            safe_attack = redact_passphrase(safe_attack, phrase)
+            safe_response = redact_passphrase(safe_response, phrase)
         event = {
             "type": "duel_turn",
             "attacker": attacker,
@@ -408,7 +598,7 @@ class Runtime:
                 "started": self.started,
                 "done": self.done,
                 "events": events,
-                "results": self.results,
+                "results": self.results if self.done else None,
             }
         )
         try:
@@ -432,11 +622,21 @@ class Runtime:
                     }
                 )
 
+    def private_engine_state(self) -> dict:
+        return {
+            "registrations": [asdict(registration) for registration in self.registrations],
+            "duels": [asdict(duel) for duel in self.duels.values()],
+        }
+
     def _write_artifacts(self) -> None:
         assert self.results is not None
         if self.training is not None:
             records = self.training.finish(
-                outcome=self.results,
+                outcome={
+                    **self.results,
+                    "runtime_configuration": {**self.config.model_dump(exclude={"tokens"}), "seed": self.seed},
+                    "engine_state": self.private_engine_state(),
+                },
                 environment={
                     "provider": self.config.model_provider,
                     "model": self.config.model_id,
@@ -446,6 +646,7 @@ class Runtime:
                     "liveness_probes": 3,
                 },
                 environment_generations=self.model.generations,
+                ownership_settled=self.ownership_settled,
             )
             self.training.write(records)
         results_uri = os.environ.get("COGAME_RESULTS_URI")
@@ -455,14 +656,12 @@ class Runtime:
                 results_uri,
                 json.dumps(self.results, separators=(",", ":")),
                 content_type="application/json",
-                http_method=artifact_method("COGAME_RESULTS_METHOD"),
             )
         if replay_uri:
             write_data(
                 replay_uri,
                 json.dumps(self._replay_payload(), separators=(",", ":")),
                 content_type="application/json",
-                http_method=artifact_method("COGAME_SAVE_REPLAY_METHOD"),
             )
 
     def _replay_payload(self) -> dict[str, Any]:
@@ -521,20 +720,61 @@ def create_app(runtime: Runtime) -> FastAPI:
     return app
 
 
+class OwnedServer(uvicorn.Server):
+    def __init__(self, config: uvicorn.Config, runtime: Runtime):
+        super().__init__(config)
+        self.runtime = runtime
+
+    @contextmanager
+    def capture_signals(self):
+        yield
+
+    async def serve(self, sockets=None):
+        completed = False
+        try:
+            await super().serve(sockets=sockets)
+            completed = True
+        finally:
+            await self.runtime.shutdown()
+            if not completed and self.started:
+                deadline = asyncio.get_running_loop().time() + CLEANUP_SECONDS
+                inherited = shutdown_deadline.get()
+                if inherited is not None and inherited[0] is not None:
+                    deadline = min(deadline, inherited[0])
+                closer = owned_task(self.shutdown(sockets=sockets))
+                if not await settle({closer}, deadline, cancel=False):
+                    await settle({closer}, deadline, cancel=True)
+                    raise TimeoutError("server shutdown ownership unresolved")
+                closer.result()
+
+
 def main() -> None:
     logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
     runtime = runtime_from_environment()
     app = create_app(runtime)
     host = os.environ.get("COGAME_HOST", "0.0.0.0")
     port = int(os.environ.get("COGAME_PORT", "8080"))
-    server = uvicorn.Server(uvicorn.Config(app, host=host, port=port))
+    logging.getLogger("websockets.client").setLevel(logging.WARNING)
+    logging.getLogger("websockets.server").setLevel(logging.WARNING)
+    server = OwnedServer(
+        uvicorn.Config(
+            app,
+            host=host,
+            port=port,
+            access_log=False,
+            ws_max_size=16 * 1024 * 1024,
+            ws_max_queue=8,
+            timeout_graceful_shutdown=int(CLEANUP_SECONDS),
+        ),
+        runtime,
+    )
 
     async def stop_server() -> None:
         await asyncio.sleep(0.5)
         server.should_exit = True
 
     runtime.on_episode_complete = stop_server
-    server.run()
+    main_owned(server.serve(), lambda: setattr(server, "should_exit", True))
 
 
 if __name__ == "__main__":

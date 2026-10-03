@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import signal
 import socket
 import subprocess
 import sys
@@ -28,7 +29,11 @@ class Handler(BaseHTTPRequestHandler):
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
         call_id = str(uuid4())
         learner = body["system"] == LEARNER_SYSTEM
-        slot = int(self.headers["X-Coworld-Player-Slot"])
+        if learner:
+            slot = int(self.headers["X-Coworld-Player-Slot"])
+        else:
+            assert "X-Coworld-Player-Slot" not in self.headers
+            slot = None
         if learner and flow == "silence":
             archives.append({"call_id": call_id, "slot": slot, "request": body, "response": None, "role": "learner"})
             time.sleep(2)
@@ -44,7 +49,7 @@ class Handler(BaseHTTPRequestHandler):
             )
             text = json.dumps(action)
         else:
-            text = asyncio.run(MockModel().complete(body["system"], body["messages"], slot=slot))
+            text = asyncio.run(MockModel().complete(body["system"], body["messages"], slot=0))
         payload = {
             "id": call_id,
             "model": body["model"],
@@ -53,19 +58,25 @@ class Handler(BaseHTTPRequestHandler):
             "stop_reason": "end_turn",
         }
         if learner and flow == "sampled":
+            payload["usage"] = {"input_tokens": 2, "output_tokens": 2}
             payload["sampling_evidence"] = {
+                "policy_revision": "synthetic-http-model",
+                "tokenizer_revision": "synthetic-http-tokenizer",
+                "chat_template": "synthetic-http-template",
+                "sampling": "full_softmax_temperature_one",
+                "enable_thinking": False,
+                "max_new_tokens": body["max_tokens"],
+                "max_sequence_length": body["max_tokens"] + 2,
+                "sampling_seed": 0,
+                "eos_token_ids": [4],
                 "prompt_token_ids": [1, 2],
                 "completion_token_ids": [3, 4],
                 "behavior_log_probs": [-0.5, -0.6],
-                "stop_reason": "end_turn",
+                "response": text,
+                "stop_reason": "eos",
             }
-        if learner and flow == "greedy-tokens":
-            payload["sampling_evidence"] = {
-                "prompt_token_ids": [1, 2],
-                "completion_token_ids": [3, 4],
-                "behavior_log_probs": None,
-                "stop_reason": "end_turn",
-            }
+        if learner and flow == "greedy":
+            payload["sampling_evidence"] = None
         raw = json.dumps(payload)
         if learner and flow == "malformed":
             raw = "{actual malformed native response"
@@ -115,12 +126,12 @@ def wait_port(process, number):
 
 
 server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-server.daemon_threads = True
+server.daemon_threads = False
 thread = threading.Thread(target=server.serve_forever, daemon=True)
 thread.start()
 manifest = json.loads((root / "coworld_manifest_template.json").read_text())
 cohorts = [("accepted", v["id"]) for v in manifest["variants"]] + [
-    (f, "duel-2") for f in ("sampled", "greedy-tokens", "malformed", "throttled", "silence")
+    (f, "duel-2") for f in ("sampled", "greedy", "malformed", "throttled", "silence")
 ]
 try:
     for flow, variant in cohorts:
@@ -148,7 +159,7 @@ try:
             "COGAME_HOST": "127.0.0.1",
             "COGAME_RESULTS_URI": str(case / "results.json"),
             "COGAME_SAVE_REPLAY_URI": str(case / "replay.json"),
-            "COGAME_SAVE_TRAJECTORY_URI": str(case / "trajectory.jsonl"),
+            "COGAME_SAVE_TRAJECTORY_URI": (case / "trajectory.jsonl").as_uri(),
             "COWORLD_EPISODE_ID": "open-sesame-" + variant + "-" + flow + "-" + source[:7],
             "COWORLD_GAME_VERSION": "source-" + source,
             "COWORLD_SOURCE_REVISION": source,
@@ -191,16 +202,49 @@ try:
                         stderr=subprocess.STDOUT,
                     )
                 )
+            if flow in ("malformed", "throttled"):
+                for player in processes[1:]:
+                    player.wait(timeout=10)
+                game.terminate()
+                time.sleep(0.05)
+                if game.poll() is None:
+                    game.send_signal(signal.SIGINT)
+                game.wait(timeout=10)
+                assert not (case / "trajectory.jsonl").exists()
+                assert not (case / "results.json").exists()
+                assert not (case / "replay.json").exists()
+                snapshot = json.loads((case / "trajectory.ownership.private").read_text())
+                assert snapshot["ownership_settled"] is False
+                assert (case / "trajectory.progress.private").stat().st_mode & 0o777 == 0o600
+                assert all(
+                    phrase not in (case / "game.log").read_text()
+                    for phrase in ("actual malformed native response", "actual throttled native response")
+                )
+                (case / "native-call-archives.json").write_text(json.dumps(archives, indent=2))
+                (case / "native-call-archives.json").chmod(0o600)
+                print(
+                    json.dumps(
+                        {
+                            "case": case.name,
+                            "ownership_settled": False,
+                            "complete_artifact": False,
+                            "authenticated_receipts": 0,
+                        }
+                    ),
+                    flush=True,
+                )
+                continue
             game.wait(timeout=60)
             assert game.returncode == 0, (case, game.returncode)
             path = case / "trajectory.jsonl"
-            events = [json.loads(line) for line in path.read_text().splitlines()]
-            assert events[-1]["status"] == ("truncated" if flow == "silence" else "completed"), (case, events[-1])
+            complete = json.loads(path.read_text())
+            events = [*complete["decisions"], complete["episode"]]
+            assert events[-1]["status"] == "completed", (case, events[-1])
             attempts = [a for e in events[:-1] for a in e["attempts"]]
             by_id = {a["call_id"]: a for a in archives}
             for a in attempts:
                 if a["platform_call_id"] is None:
-                    assert flow == "silence" and a["raw_response"] is None and a["latency_ms"] is None
+                    assert flow == "silence" and a["raw_response"] is None and a["http_status"] is None
                     assert a["request"] is not None and not a["accepted"]
                     continue
                 actual = by_id[a["platform_call_id"]]
@@ -222,7 +266,7 @@ try:
             private = json.dumps(events)
             public = (case / "replay.json").read_text()
             assert "checkpoint/learner-fixture" not in public
-            if flow in ("accepted", "sampled", "greedy-tokens"):
+            if flow in ("accepted", "sampled", "greedy"):
                 assert all(e["action_status"] == "accepted" for e in events[:-1])
                 assert all(
                     next(a for a in e["attempts"] if a["attempt_id"] == e["selected_attempt_id"])["parsed_action"]
