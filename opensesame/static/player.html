@@ -60,6 +60,12 @@
       if (msg.type === "hello") {
         statusEl.textContent = `SEAT ${msg.slot} · ${msg.player_name}`;
         addEvent(`Protocol ${msg.protocol_version}`, "READY");
+      } else if (msg.type === "stop") {
+        for (const button of task.querySelectorAll("button")) button.disabled = true;
+        taskTitle.textContent = "Finalizing match";
+        send({type:"stopped", stop_id:msg.stop_id});
+      } else if (msg.type === "evidence_received") {
+        statusEl.textContent = "OWNERSHIP JOINED";
       } else if (msg.type === "register_request") {
         taskTitle.textContent = "Forge your defense";
         task.replaceChildren();

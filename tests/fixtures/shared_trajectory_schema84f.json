@@ -1,0 +1,831 @@
+{
+  "repository": "Metta-AI/metta",
+  "source_revision": "84f528afe8afaf0c5f17899fd10ff038bc39e682",
+  "source_path": "packages/coworld/src/coworld/decision_trajectory.py",
+  "source_sha256": "d5f7a276c5a814c74f1d68a0aae1c004201846af7cd7363cb18bd9645611d1b6",
+  "json_schema": {
+    "$defs": {
+      "DecisionAttempt": {
+        "additionalProperties": false,
+        "description": "One proposal made while resolving a game decision.",
+        "properties": {
+          "attempt_id": {
+            "minLength": 1,
+            "title": "Attempt Id",
+            "type": "string"
+          },
+          "platform_call_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Platform Call Id"
+          },
+          "generation_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Generation Id"
+          },
+          "policy": {
+            "minLength": 1,
+            "title": "Policy",
+            "type": "string"
+          },
+          "origin": {
+            "enum": [
+              "model",
+              "teacher",
+              "fallback",
+              "human",
+              "unknown"
+            ],
+            "title": "Origin",
+            "type": "string"
+          },
+          "inference_mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Inference Mode"
+          },
+          "provider_request": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/JsonValue"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "provider_response": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/JsonValue"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "prompt": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/JsonValue"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "request": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/JsonValue"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "response": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/JsonValue"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "raw_response": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/JsonValue"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "response_headers": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Response Headers"
+          },
+          "response_body_b64": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Response Body B64"
+          },
+          "response_headers_b64": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Response Headers B64"
+          },
+          "response_complete": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Response Complete"
+          },
+          "response_reader_joined": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Response Reader Joined"
+          },
+          "http_status": {
+            "anyOf": [
+              {
+                "maximum": 599,
+                "minimum": 100,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Http Status"
+          },
+          "provider_request_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Provider Request Id"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Model"
+          },
+          "model_identity": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Model Identity"
+          },
+          "tokenizer_identity": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Tokenizer Identity"
+          },
+          "chat_template_sha256": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Chat Template Sha256"
+          },
+          "decoder": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/JsonValue"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "prompt_token_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Prompt Token Ids"
+          },
+          "sampled_token_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sampled Token Ids"
+          },
+          "stop_reason": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Stop Reason"
+          },
+          "parsed_action": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/JsonValue"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "accepted": {
+            "title": "Accepted",
+            "type": "boolean"
+          },
+          "rejection_reason": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Rejection Reason"
+          },
+          "latency_ms": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Latency Ms"
+          },
+          "input_tokens": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Input Tokens"
+          },
+          "output_tokens": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Output Tokens"
+          },
+          "behavior_logprobs": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Behavior Logprobs"
+          }
+        },
+        "required": [
+          "attempt_id",
+          "policy",
+          "origin",
+          "accepted"
+        ],
+        "title": "DecisionAttempt",
+        "type": "object"
+      },
+      "DecisionEvent": {
+        "additionalProperties": false,
+        "description": "Authoritative result of one game decision, including every attempt.",
+        "properties": {
+          "schema_version": {
+            "const": "1",
+            "default": "1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "event_type": {
+            "const": "decision",
+            "default": "decision",
+            "title": "Event Type",
+            "type": "string"
+          },
+          "event_id": {
+            "format": "uuid",
+            "title": "Event Id",
+            "type": "string"
+          },
+          "recorded_at": {
+            "format": "date-time",
+            "title": "Recorded At",
+            "type": "string"
+          },
+          "episode_id": {
+            "minLength": 1,
+            "title": "Episode Id",
+            "type": "string"
+          },
+          "decision_id": {
+            "minLength": 1,
+            "title": "Decision Id",
+            "type": "string"
+          },
+          "decision_index": {
+            "minimum": 0,
+            "title": "Decision Index",
+            "type": "integer"
+          },
+          "game": {
+            "minLength": 1,
+            "title": "Game",
+            "type": "string"
+          },
+          "game_version": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Game Version"
+          },
+          "source_revision": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Source Revision"
+          },
+          "image_digest": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Image Digest"
+          },
+          "seat": {
+            "minLength": 1,
+            "title": "Seat",
+            "type": "string"
+          },
+          "visibility": {
+            "default": "private",
+            "enum": [
+              "private",
+              "public",
+              "mixed",
+              "unknown"
+            ],
+            "title": "Visibility",
+            "type": "string"
+          },
+          "observation": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/JsonValue"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "prompt": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/JsonValue"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "attempts": {
+            "items": {
+              "$ref": "#/$defs/DecisionAttempt"
+            },
+            "title": "Attempts",
+            "type": "array"
+          },
+          "selected_attempt_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Selected Attempt Id"
+          },
+          "executed_action": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/JsonValue"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "execution": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ExecutionEvidence"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "action_status": {
+            "enum": [
+              "accepted",
+              "rejected",
+              "fallback",
+              "missing"
+            ],
+            "title": "Action Status",
+            "type": "string"
+          },
+          "fallback_origin": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Fallback Origin"
+          },
+          "reward": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/JsonValue"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "terminal": {
+            "default": false,
+            "title": "Terminal",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "episode_id",
+          "decision_id",
+          "decision_index",
+          "game",
+          "seat",
+          "attempts",
+          "action_status"
+        ],
+        "title": "DecisionEvent",
+        "type": "object"
+      },
+      "EpisodeEvent": {
+        "additionalProperties": false,
+        "description": "Terminal or truncated episode summary emitted by the game runtime.",
+        "properties": {
+          "schema_version": {
+            "const": "1",
+            "default": "1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "event_type": {
+            "const": "episode",
+            "default": "episode",
+            "title": "Event Type",
+            "type": "string"
+          },
+          "event_id": {
+            "format": "uuid",
+            "title": "Event Id",
+            "type": "string"
+          },
+          "recorded_at": {
+            "format": "date-time",
+            "title": "Recorded At",
+            "type": "string"
+          },
+          "episode_id": {
+            "minLength": 1,
+            "title": "Episode Id",
+            "type": "string"
+          },
+          "seed_family": {
+            "minLength": 1,
+            "title": "Seed Family",
+            "type": "string"
+          },
+          "game": {
+            "minLength": 1,
+            "title": "Game",
+            "type": "string"
+          },
+          "game_version": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Game Version"
+          },
+          "source_revision": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Source Revision"
+          },
+          "image_digest": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Image Digest"
+          },
+          "status": {
+            "enum": [
+              "completed",
+              "truncated",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/JsonValue"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "participant_outcomes": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/JsonValue"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "episode_id",
+          "seed_family",
+          "game",
+          "status"
+        ],
+        "title": "EpisodeEvent",
+        "type": "object"
+      },
+      "ExecutionEvidence": {
+        "additionalProperties": false,
+        "description": "Engine-owned physical controls for an applied macro action.\n\nTicks cover [start_tick, end_tick). Each tick contains three signed bytes\n(move_x, move_y, aim_turn) and one unsigned action byte for this seat.",
+        "properties": {
+          "start_tick": {
+            "minimum": 0,
+            "title": "Start Tick",
+            "type": "integer"
+          },
+          "end_tick": {
+            "minimum": 0,
+            "title": "End Tick",
+            "type": "integer"
+          },
+          "tick_hz": {
+            "exclusiveMinimum": 0,
+            "title": "Tick Hz",
+            "type": "number"
+          },
+          "control_encoding": {
+            "const": "i8-i8-i8-u8",
+            "title": "Control Encoding",
+            "type": "string"
+          },
+          "seat_controls_b64": {
+            "title": "Seat Controls B64",
+            "type": "string"
+          }
+        },
+        "required": [
+          "start_tick",
+          "end_tick",
+          "tick_hz",
+          "control_encoding",
+          "seat_controls_b64"
+        ],
+        "title": "ExecutionEvidence",
+        "type": "object"
+      },
+      "JsonValue": {}
+    },
+    "additionalProperties": false,
+    "description": "Export unit containing only decisions from a completed episode.",
+    "properties": {
+      "schema_version": {
+        "const": "1",
+        "default": "1",
+        "title": "Schema Version",
+        "type": "string"
+      },
+      "episode": {
+        "$ref": "#/$defs/EpisodeEvent"
+      },
+      "decisions": {
+        "items": {
+          "$ref": "#/$defs/DecisionEvent"
+        },
+        "title": "Decisions",
+        "type": "array"
+      }
+    },
+    "required": [
+      "episode",
+      "decisions"
+    ],
+    "title": "CompleteEpisode",
+    "type": "object"
+  }
+}

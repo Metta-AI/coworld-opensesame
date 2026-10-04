@@ -91,11 +91,12 @@ uv run coworld run-episode dist/coworld_manifest.json coworld-opensesame:latest 
   --variant local-mock-4
 ```
 
-The certification fixture uses `model_provider: mock`, seats the starter and leaky baselines, and proves that the known
-attacker cracks the weak defense while the starter defense survives. It makes no AWS calls.
+The certification fixture uses `model_provider: mock` and seats all three declared runnables.
+The native learner requires configured inference access; isolated synthetic HTTP certificates prove transport only.
+The known starter attacker cracks the weak defense while the starter defense survives.
 
 Hosted `duel-2` and `league-4` episodes use the native Coworld LLM sidecar. Game containers receive
-`COWORLD_LLM_ENDPOINT`; player policies do not need model access. The canonical OpenRouter model ID lives
+`COWORLD_LLM_ENDPOINT`; the native learner also requires configured model access. The canonical OpenRouter model ID lives
 in the game config, and `COWORLD_LLM_MODEL` overrides it when the platform provides one.
 
 ## Modes
@@ -133,6 +134,8 @@ See [architecture and operations](docs/architecture.md), the
 Hosted game calls use `COWORLD_LLM_ENDPOINT`, canonical OpenRouter model IDs,
 selected by the game config. Learner checkpoint overrides never select the frozen defender.
 Native variants select `model_provider: llm`.
-Defense liveness calls charge the registering seat; attack calls charge the
-attacking seat. The explicit mock certification fixture remains deterministic.
+Frozen defender calls are headerless environment calls. Learner calls carry their authenticated player slot.
+The explicit mock certification fixture remains deterministic.
 Local native runs require `COWORLD_LLM_ENDPOINT`; mock runs make no model calls.
+
+Private training artifacts and qualification gates are documented in [TRAINING.md](TRAINING.md).

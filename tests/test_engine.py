@@ -45,7 +45,7 @@ def test_passphrases_are_deterministic_unique_and_well_formed() -> None:
 
 def test_game_config_rejects_mismatched_roster() -> None:
     with pytest.raises(ValidationError, match="same number"):
-        GameConfig(tokens=["a", "b", "c"], players=[{"name": "one"}, {"name": "two"}])
+        GameConfig(tokens=["a", "b", "c"], players=[{"name": "one"}, {"name": "two"}], model_provider="mock")
 
 
 def test_complete_ordered_pair_matrix() -> None:

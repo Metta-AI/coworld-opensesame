@@ -1,46 +1,32 @@
-# Open Sesame private training
+# Private language training evidence
 
-The learner submits a frozen defense prompt and attack messages. The game calls
-the configured defender model and applies the deterministic extraction oracle.
-Defender and liveness generations define the environment, never learner targets.
-They ignore learner checkpoint and decoder overrides.
+The `native-learner` runnable uses the Coworld Messages sidecar. Its exact ordinary observations,
+prompt, parser and capped action are shared by hosted play and private exports.
+The environment model is selected by game configuration and remains frozen at temperature 0 and top-p 1.
+Learner model and decoder overrides never select the defender. Missing native endpoints fail loudly.
+`local-mock-4` and source-owned mock teacher cohorts are diagnostic configurations; they do not prove Haiku judgment or trained strength.
 
-Set `OPEN_SESAME_PROFILE=native` for the shipped Messages learner. It uses
-`COWORLD_LLM_ENDPOINT`, `COWORLD_LLM_MODEL`, `COWORLD_LLM_TEMPERATURE`, and
-`COWORLD_LLM_TOP_P`. Production and teacher export share the learner prompt,
-text parser, private observation, character caps, and complete game engine.
-Started requests reach the authenticated socket before HTTP; received headers,
-raw bodies, sampling evidence, and final elapsed time update that same attempt.
-Failed generations terminate the player and the game applies its bounded
-ordinary fallback. No provider credentials or direct-provider fallback exists.
+Set the exact `COWORLD_EPISODE_ID`, `COWORLD_GAME_VERSION` and committed `COWORLD_SOURCE_REVISION`.
+`COGAME_SAVE_TRAJECTORY_URI` must be an absolute local file URI; development collectors may select `COWORLD_PRIVATE_TRAINING_DIR`.
+The private append-only progress spool retains actual starts, requests, bytes, status, raw header pairs and reader ownership.
+Partial invalid UTF-8 remains base64 evidence. No-response fields remain unobserved.
+Only joined ownership produces the canonical SDK `CompleteEpisode` JSONL record. An unresolved owner preserves its writable spool
+and auxiliary `.ownership.private` snapshot, withholding final results and replay.
+All private files are mode 0600 and excluded from Docker/public replay artifacts.
 
-The game captures private JSONL when `COGAME_SAVE_TRAJECTORY_URI` or
-`COWORLD_PRIVATE_TRAINING_DIR` is set. It requires `COWORLD_EPISODE_ID`,
-`COWORLD_GAME_VERSION`, and a full commit in `COWORLD_SOURCE_REVISION`.
-Directories use mode700; local artifacts use mode600 and atomic replacement.
-Source-bound model text is parsed independently and compared with the consumed
-wire action. Attribution mismatches receive no learner label. External teacher
-and human claims become unknown. Public results and replay keep their existing
-secret redaction and never contain private generation evidence.
+The source-owned collector runs whole episodes with the shipped starter/leaky policy functions:
 
-The private terminal outcome includes scores, eligibility, participant outcomes,
-the frozen environment configuration, and every started defender generation.
-An unfinished learner generation makes the training episode truncated.
-Never import defender generations as decision targets or infer token
-probabilities from greedy outputs.
-
-From a clean committed checkout, export at least ten complete diagnostic games:
-
-```bash
-uv run python -m opensesame.export_teacher --variant duel-2 --games 10 --output /tmp/open-sesame-duel
+```sh
+uv run --no-sync python -m opensesame.export_teacher --variant league-4 --games 10 --output /absolute/private/corpus
 ```
 
-The exporter explicitly uses the deterministic mock environment and alternates
-the shipped starter/leaky policies. Select `scripted-starter` targets; retain
-`scripted-leaky` opponent evidence without using it as learner labels. These labels verify the production engine,
-prompt/parser, and episode export. They do not measure prompt quality against
-the production defender or establish saved-model strength. Qualify JSONL with
-the Coworld training consumer, split by `open-sesame-<seed>` across variants,
-and separately review teacher quality and frozen production-model behavior.
-Production publication requires the reviewed training runtime and immutable
-source/image provenance readback.
+Repeat for every manifest variant. Seeds identify `open-sesame-<seed>` families across coupled variants.
+The collector preserves whole episodes and emits SHA256 manifests marked unreviewed. It emits no training labels or train/validation split.
+Modern Metta training import requires external content-bound source review for scripted teachers.
+Model-backed labels require authenticated platform receipts and trusted episode/checkpoint context; game packets are insufficient.
+The native process fixtures use synthetic HTTP responses and produce zero authenticated model receipts.
+Draw-time sampler fields are preserved only when actually returned; greedy responses have no fabricated probabilities.
+
+Before release, refresh every player to protocol 2, certify the exact game image with Coworld 0.1.56,
+verify real inference access and private receipt joins, and review the frozen defender configuration.
+Game source merges and diagnostic image certificates do not authorize production upload.

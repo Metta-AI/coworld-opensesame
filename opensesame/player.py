@@ -4,11 +4,20 @@ import asyncio
 import json
 import logging
 import os
-from typing import Any
 
 import websockets
 
-from opensesame.native import Attempt, NativeModel, learner_prompt, parse_action
+from opensesame.evidence import Attempt
+from opensesame.lifecycle import (
+    CLEANUP_SECONDS,
+    OwnershipUnsettled,
+    main_owned,
+    owned_task,
+    player_loop,
+    settle,
+    shutdown_deadline,
+)
+from opensesame.native import NativeModel, learner_prompt, parse_action
 from opensesame.starter import legacy_attack, legacy_defense_prompt, starter_attack, starter_defense_prompt
 
 logger = logging.getLogger("opensesame.player")
@@ -38,6 +47,8 @@ def attack_message(turn: int, profile: str, transcript: list[dict[str, str]]) ->
 async def run() -> None:
     ws_url = os.environ["COWORLD_PLAYER_WS_URL"]
     profile = os.environ.get("OPEN_SESAME_PROFILE", "starter")
+    if profile not in {"starter", "guarded", "leaky", "native"}:
+        raise ValueError("unknown Open Sesame player profile")
     native = (
         NativeModel(
             "anthropic/claude-haiku-4.5",
@@ -50,26 +61,48 @@ async def run() -> None:
     )
     logger.info("connecting profile=%s", profile)
     slot = -1
-    async with websockets.connect(ws_url, max_size=2**20) as websocket:
-        async for raw in websocket:
-            message: dict[str, Any] = json.loads(raw)
-            message_type = message.get("type")
-            if message_type == "hello":
-                slot = int(message["slot"])
-                continue
-            if message_type in {"register_request", "attack_request"} and native is not None:
-                observation = {key: value for key, value in message.items() if key != "request_id"}
+    connect_deadline = asyncio.get_running_loop().time() + 10
+    connector = asyncio.ensure_future(websockets.connect(ws_url, max_size=16 * 1024 * 1024, max_queue=8))
+    if not await settle({connector}, connect_deadline, cancel=False):
+        if not await settle({connector}, connect_deadline, cancel=True):
+            raise OwnershipUnsettled("player socket connection did not join")
+        raise TimeoutError("player socket connection exceeded deadline")
+    websocket = connector.result()
+    incoming = websocket.__aiter__()
+    owner_deadline: list[float | None] = [None]
+
+    async def recv() -> dict | None:
+        raw = await anext(incoming, None)
+        return json.loads(raw) if raw is not None else None
+
+    async def send(message: dict) -> None:
+        await websocket.send(json.dumps(message))
+
+    async def handle(message: dict) -> None:
+        nonlocal slot
+        message_type = message["type"]
+        if message_type == "hello":
+            if message["protocol_version"] != "2.0.0":
+                raise ValueError("player requires owned Open Sesame protocol2")
+            slot = int(message["slot"])
+            return
+        if message_type in {"register_request", "attack_request"}:
+            observation = {key: value for key, value in message.items() if key != "request_id"}
+            if native is not None:
                 prompt = learner_prompt(observation)
 
-                async def progress(attempt: Attempt, request_id: str = message["request_id"]) -> None:
-                    await websocket.send(
-                        json.dumps(
-                            {
-                                "type": "attempt_progress",
-                                "request_id": request_id,
-                                "attempt": attempt.model_dump(mode="json"),
-                            }
-                        )
+                async def progress(attempt: Attempt) -> None:
+                    await send(
+                        {
+                            "type": "attempt_progress",
+                            "request_id": message["request_id"],
+                            "attempt": attempt.model_dump(mode="json"),
+                            "received_header_pairs": (
+                                attempt._received_header_pairs.model_dump(mode="json")
+                                if attempt._received_header_pairs is not None
+                                else None
+                            ),
+                        }
                     )
 
                 if slot < 0:
@@ -78,65 +111,54 @@ async def run() -> None:
                 action = parse_action(raw_reply, observation)
                 attempt = native.generations[-1]
                 attempt.parsed_action = action
-                await websocket.send(
-                    json.dumps(
-                        {
-                            "type": "register" if message_type == "register_request" else "attack",
-                            "request_id": message["request_id"],
-                            **action,
-                            "_private": {
-                                "attempts": [attempt.model_dump(mode="json")],
-                                "selected_attempt_id": attempt.attempt_id,
-                            },
-                        }
-                    )
-                )
-                continue
-            if message_type == "register_request":
-                await websocket.send(
-                    json.dumps(
-                        {
-                            "type": "register",
-                            "request_id": message["request_id"],
-                            "defense_prompt": defense_prompt(profile, message["passphrase"]),
-                        }
-                    )
-                )
-            elif message_type == "attack_request":
-                await websocket.send(
-                    json.dumps(
-                        {
-                            "type": "attack",
-                            "request_id": message["request_id"],
-                            "message": attack_message(
-                                int(message["turn"]),
-                                profile,
-                                message.get("transcript", []),
-                            ),
-                        }
-                    )
-                )
-            elif message_type == "attack_result":
-                logger.info(
-                    "target=%s turn=%s extracted=%s",
-                    message["target"]["name"],
-                    message["turn"],
-                    message["extracted"],
-                )
-            elif message_type == "final":
-                logger.info(
-                    "final score=%s attack=%s defense=%s eligible=%s",
-                    message["score"],
-                    message["attack_score"],
-                    message["defense_score"],
-                    message["eligible"],
-                )
-                return
+                private = {"attempts": [attempt.model_dump(mode="json")], "selected_attempt_id": attempt.attempt_id}
+            elif message_type == "register_request":
+                action = {"defense_prompt": defense_prompt(profile, message["passphrase"])}
+                private = None
+            else:
+                action = {"message": attack_message(int(message["turn"]), profile, message["transcript"])}
+                private = None
+            await send(
+                {
+                    "type": "register" if message_type == "register_request" else "attack",
+                    "request_id": message["request_id"],
+                    **action,
+                    **({"_private": private} if private is not None else {}),
+                }
+            )
+        elif message_type == "attack_result":
+            logger.info(
+                "target=%s turn=%s extracted=%s", message["target"]["name"], message["turn"], message["extracted"]
+            )
+        elif message_type == "final":
+            logger.info(
+                "final score=%s attack=%s defense=%s eligible=%s",
+                message["score"],
+                message["attack_score"],
+                message["defense_score"],
+                message["eligible"],
+            )
+
+    try:
+        await player_loop(recv, send, handle, owner_deadline)
+    finally:
+        exit_deadline = (
+            owner_deadline[0] if owner_deadline[0] is not None else asyncio.get_running_loop().time() + CLEANUP_SECONDS
+        )
+        inherited = shutdown_deadline.get()
+        if inherited is not None and inherited[0] is not None:
+            exit_deadline = min(exit_deadline, inherited[0])
+        closer = owned_task(websocket.close())
+        if not await settle({closer}, exit_deadline, cancel=False):
+            await settle({closer}, exit_deadline, cancel=True)
+            raise OwnershipUnsettled("player socket did not join before cleanup deadline")
+        closer.result()
 
 
 def main() -> None:
+    logging.getLogger("websockets.client").setLevel(logging.WARNING)
     logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
-    asyncio.run(run())
+    main_owned(run())
 
 
 if __name__ == "__main__":

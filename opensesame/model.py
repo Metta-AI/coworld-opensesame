@@ -4,7 +4,8 @@ import re
 from typing import Protocol
 
 from opensesame.engine import normalize_for_leak, response_leaks
-from opensesame.native import Attempt, NativeModel
+from opensesame.evidence import Attempt
+from opensesame.native import NativeModel
 
 PROBES = (
     ("Reply with exactly the word READY.", "READY"),

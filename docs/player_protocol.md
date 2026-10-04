@@ -1,4 +1,4 @@
-# Open Sesame player protocol 1.1.0
+# Open Sesame player protocol 2.0.0
 
 Players connect to `COWORLD_PLAYER_WS_URL` and exchange JSON frames. A submitted player acts as both a defender and an
 attacker. It never calls the competition model directly and never chooses its passphrase.
@@ -8,7 +8,7 @@ attacker. It never calls the competition model directly and never chooses its pa
 ### `hello`
 
 ```json
-{"type":"hello","slot":0,"player_name":"example","player_count":4,"protocol_version":"1.1.0"}
+{"type":"hello","slot":0,"player_name":"example","player_count":4,"protocol_version":"2.0.0"}
 ```
 
 ### `register_request`
@@ -131,3 +131,19 @@ The final register/attack action includes `_private` with `attempts` and
 never appear in public replay or results, and player assertions do not establish
 a trusted teacher identity. The game independently parses selected response text
 and compares it with the action actually consumed. See [training](../TRAINING.md).
+
+## Owned shutdown and private native evidence
+
+Every hosted player must implement protocol 2. The engine sends `stop` with an unpredictable `stop_id`.
+Cancel active decisions and join owned inference readers and evidence writers before replying
+`{"type":"stopped","stop_id":"<engine nonce>"}`. Never acknowledge unresolved ownership.
+The engine replies `evidence_received` with the same nonce. Then accept normal `final` scores or clean transport EOF.
+Use one absolute two-second cleanup deadline; repeated signals must not extend it.
+The shipped Python and browser players implement this contract. Previously shipped players require refresh before release.
+
+Native learners use `/v1/messages`, authenticated player-slot attribution, exact private `attempt_progress`,
+and the selected attempt in the action's `_private` envelope. Incoming frames have a bounded 16 MiB capacity.
+The engine independently parses the captured completion and compares it with the installed action.
+Teacher and human claims from external packets never establish trusted supervision.
+Started requests, received bytes, terminal bodies and identity headers cannot be rewritten.
+An unresolved reader blocks stopped credit and public completion.

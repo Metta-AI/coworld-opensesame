@@ -194,6 +194,16 @@
       "run": ["python", "-m", "opensesame.player"],
       "env": {"OPEN_SESAME_PROFILE": "leaky"},
       "source_url": "https://github.com/Metta-AI/coworld-opensesame/tree/main/opensesame/player.py"
+    },
+    {
+      "id": "native-learner",
+      "name": "Native language learner",
+      "type": "player",
+      "description": "Native sidecar text actions with private exact call evidence and owned shutdown. Requires registered inference access.",
+      "image": "{{OPENSESAME_IMAGE}}",
+      "run": ["python", "-m", "opensesame.player"],
+      "env": {"OPEN_SESAME_PROFILE": "native", "COWORLD_LLM_TEMPERATURE": "1", "COWORLD_LLM_TOP_P": "1"},
+      "source_url": "https://github.com/Metta-AI/coworld-opensesame/tree/main/opensesame/player.py"
     }
   ],
   "commissioner": [
@@ -291,16 +301,18 @@
       "player_connect_timeout_seconds": 10,
       "action_timeout_seconds": 5,
       "model_timeout_seconds": 5,
-      "model_concurrency": 2,
+      "model_concurrency": 3,
       "minimum_episode_seconds": 5,
       "players": [
         {"name": "Open Sesame Starter"},
-        {"name": "Leaky Canary"}
+        {"name": "Leaky Canary"},
+        {"name": "Native language learner"}
       ]
     },
     "players": [
       {"player_id": "red-team-baseline"},
-      {"player_id": "leaky-canary"}
+      {"player_id": "leaky-canary"},
+      {"player_id": "native-learner"}
     ]
   }
 }

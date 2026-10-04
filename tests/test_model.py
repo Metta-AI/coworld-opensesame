@@ -48,7 +48,7 @@ async def test_mock_model_exercises_known_success_and_failure() -> None:
 
 
 @pytest.mark.asyncio
-async def test_native_sidecar_model_and_acting_seat(monkeypatch) -> None:
+async def test_native_sidecar_environment_is_headerless_and_frozen(monkeypatch) -> None:
     import json
     import threading
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -94,6 +94,6 @@ async def test_native_sidecar_model_and_acting_seat(monkeypatch) -> None:
     path, headers, body = requests[0]
     assert path == "/v1/messages"
     assert body["model"] == "anthropic/frozen-defender"
-    assert headers["X-Coworld-Player-Slot"] == "1"
+    assert "X-Coworld-Player-Slot" not in headers
     assert "anthropic_version" not in body
     assert "Authorization" not in headers

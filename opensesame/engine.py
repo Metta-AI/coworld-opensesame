@@ -5,9 +5,9 @@ import random
 import re
 import unicodedata
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 SYLLABLES = (
     "ba",
@@ -47,14 +47,17 @@ PASSPHRASE_PATTERN = re.compile(r"^[a-z]{6}-[a-z]{6}-[a-z]{6}$")
 
 
 class PlayerConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
     name: str = Field(min_length=1, max_length=80)
 
 
 class GameConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True, allow_inf_nan=False)
+
     tokens: list[str] = Field(min_length=2, max_length=8)
     players: list[PlayerConfig] = Field(min_length=2, max_length=8)
     seed: int | None = None
-    model_provider: str = Field(default="mock", pattern=r"^(mock|llm)$")
+    model_provider: Literal["mock", "llm"]
     model_id: str = Field(default="anthropic/claude-haiku-4.5", min_length=1)
     max_turns: int = Field(default=4, ge=1, le=6)
     defense_prompt_char_cap: int = Field(default=12_000, ge=500, le=30_000)
